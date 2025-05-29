@@ -35,6 +35,17 @@ endif()
 
 find_package(OpenMP REQUIRED)
 
+FetchContent_Declare(args
+  GIT_REPOSITORY https://github.com/Taywee/args.git
+  GIT_TAG        6.4.7
+  GIT_PROGRESS   TRUE
+  GIT_SHALLOW    TRUE
+  EXCLUDE_FROM_ALL
+  FIND_PACKAGE_ARGS NAMES args
+)
+FetchContent_GetProperties(args)
+FetchContent_MakeAvailable(args)
+
 # Source
 file(GLOB_RECURSE SOURCES src/*.cpp src/*.cc src/*.h src/*.hpp)
 
@@ -53,6 +64,6 @@ if(APPLE)
 endif()
 
 target_link_libraries(${PROJECT_NAME}
-  PRIVATE Eigen3::Eigen OpenMP::OpenMP_CXX
+  PRIVATE Eigen3::Eigen OpenMP::OpenMP_CXX taywee::args
 )
 

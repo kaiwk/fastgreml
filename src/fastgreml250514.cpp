@@ -17,6 +17,7 @@
 
 #include <omp.h>
 #include <Eigen/Eigen>
+#include <args.hxx>
 
 
 using namespace std;
@@ -52,6 +53,24 @@ vector<bool> grmidwithy;
 vector<int> nomissgrmid;
 vector<int> grmloc;
 bool _check = true;
+
+struct Mphe {
+    int i;
+    std::string path;
+};
+
+std::vector<std::string> split_string(const std::string &str, char sep) {
+    std::vector<std::string> tokens;
+    size_t start = 0;
+    size_t end = str.find(sep);
+    while (end != std::string::npos) {
+        tokens.push_back(str.substr(start, end - start));
+        start = end + 1;
+        end = str.find(sep, start);
+    }
+    tokens.push_back(str.substr(start));
+    return tokens;
+}
 
 struct Grmbin{  //230512
     MatrixXf A, B, CmatA;
@@ -3454,8 +3473,56 @@ MatrixXf read_phe_search_formhe(string phefile){
     return ymat;
 }
 
+struct MpheReader {
+    void operator()(const std::string &name, const std::string &value, Mphe &mphe) {
+        std::vector<std::string> values = split_string(value, ',');
+        assert(values.size() == 2);
+        mphe.i = std::stoi(values[0]);
+        mphe.path = values[1];
+    }
+};
+
 int main(int argc, const char * argv[]) {
+    // Parse args
+    args::ArgumentParser arg_parser("fastgreml");
+    args::HelpFlag help(arg_parser, "help", "Display help menu", {'h', "help"});
+    args::CompletionFlag completion(arg_parser, {"complete"});
+    args::ValueFlag<std::string> arg_grmlist_path(arg_parser, "GRM list path", "GRM list path", {'g', "grmlist"});
+    args::ValueFlag<Mphe, MpheReader> arg_mphe(arg_parser, "MPHE", "MPHE", {'m', "mphe"});
+    args::ValueFlag<std::string> arg_cov_path(arg_parser, "UKB covariates", "UKB covariates", {'c', "cov"});
+    args::ValueFlag<std::string> arg_init_values(arg_parser, "Initial values", "Initial values", {'i', "initial"});
+    args::ValueFlag<std::string> arg_output_path(arg_parser, "Output path", "Output path", {'o', "output"});
+
+    try {
+        arg_parser.ParseCLI(argc, argv);
+    } catch (const args::Completion& e) {
+        std::cout << e.what();
+        return 0;
+    } catch (const args::Help&) {
+        std::cout << arg_parser;
+        return 0;
+    } catch (const args::ParseError& e) {
+        std::cerr << e.what() << std::endl;
+        std::cerr << arg_parser;
+        return 1;
+    }
+
+    std::string grmlist_path = args::get(arg_grmlist_path);
+    Mphe mphe = args::get(arg_mphe);
+    std::string cov_path = args::get(arg_cov_path);
+    std::string init_values = args::get(arg_init_values);
+    std::string output_path = args::get(arg_output_path);
+
+    std::cout << "All args: \n" << "grmlist_path=" << grmlist_path << '\n'
+              << "mphe=" << mphe.i << " " << mphe.path << '\n'
+              << "cov path=" << cov_path << '\n'
+              << "init values=" << init_values << '\n'
+              << "output path=" << output_path << '\n';
+
+    // Parse args ends
+
     // insert code here...
+    //
 
 //    VectorXf varcmpori = utemp;
 //    res(0) = reml_iteration(y, A, varcmpori, 10)(0);
