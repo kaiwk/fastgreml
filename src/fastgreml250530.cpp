@@ -19,7 +19,6 @@
 #include <Eigen/Eigen>
 #include <args.hxx>
 
-
 using namespace std;
 using Eigen::MatrixXf;
 using Eigen::VectorXf;
@@ -36,7 +35,7 @@ using Eigen::Vector2f;
 //int n = 170985, m = 10000;
 
 int ny, ngrm, n, r;
-int C = 326;
+int C = 1;
 int corenumber = 1;
 int stepofconj = 25;
 static default_random_engine e(time(0));
@@ -179,7 +178,67 @@ double gasdev(int &idum) {
 //    }
 //    return xk;
 //}
+bool isBlankLine(const std::string& line) {
+    for (char c : line) {
+        if (!std::isspace(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+    return true;
+}
 
+int countValidLines(const std::string& filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        return 0; // fail to open
+    }
+
+    int validCount = 0;
+    std::string line;
+
+    while (std::getline(file, line)) {
+        if (!isBlankLine(line)) {
+            ++validCount;
+        }
+    }
+
+    return validCount;
+}
+
+
+int countItemnumber(const std::string& filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        return 0; // fail to open
+    }
+    std::string firstLine;
+    if (!std::getline(file, firstLine)) {
+        std::cerr << "Error: File is empty\n";
+        return 0;
+    }
+    std::istringstream iss(firstLine);
+    std::string token;
+    int count = 0;
+    while (iss >> token) {
+        count++;
+    }
+    return count;
+}
+
+string getOrdinal(int num) {
+    int lastTwo = num % 100;
+    if (lastTwo >= 11 && lastTwo <= 13) {
+        return to_string(num) + "th";
+    }
+    
+    int lastDigit = num % 10;
+    switch (lastDigit) {
+        case 1: return to_string(num) + "st";
+        case 2: return to_string(num) + "nd";
+        case 3: return to_string(num) + "rd";
+        default: return to_string(num) + "th";
+    }
+}
 
 float Hecal(MatrixXf gtemp, VectorXf ytemp){
     VectorXf _Ay = gtemp * ytemp;
@@ -235,6 +294,7 @@ void read_realphe_all(string phefile){
 void read_grmid(string grmidfile){
     grmid.clear();
     string grmidfull = grmidfile + ".grm.id";
+    cout << "Reading grm.id file from [" << grmidfull << "]." << endl;
     string grmiditem;
     ifstream fin(grmidfull, ios::in);
     if (!fin.is_open()) cout << "can not open the grmid file\n";
@@ -247,7 +307,7 @@ void read_grmid(string grmidfile){
     ngrm = grmid.size();
     //n = ngrm; //20240223
     grmidwithy.resize(ngrm); //20240618
-    cout << "the number of id in grm is " << ngrm << endl;
+    cout << "The number of individuals included in GRM is: " << ngrm << endl;
 }
 
 void read_grmline(string grmfile){
@@ -621,7 +681,7 @@ float grmlinetimesvectorparallel(int i, VectorXf x){
 VectorXf grmlinetimesvector(VectorXf x){
     VectorXf Ax(n);
     int i = 0;
-    // omp_set_num_threads(corenumber);
+    // omp_set_num_threads(phenumber);
      #pragma omp parallel for
     for (i = 0; i< n; i++){
         Ax(i) = grmlinetimesvectorparallel(i, x);
@@ -653,7 +713,7 @@ float grmlinetimesvectorparallel2(int i, VectorXf x){
 VectorXf grmlinetimesvector2(VectorXf x){
     VectorXf Ax(n);
     int i = 0;
-   // omp_set_num_threads(corenumber);
+   // omp_set_num_threads(phenumber);
     #pragma omp parallel for
     for (i = 0; i< n; i++){
         Ax(i) = grmlinetimesvectorparallel2(i, x);
@@ -793,12 +853,14 @@ VectorXf conjugate(float varcmp, float ve, VectorXf x, int timemethod){
     yy = bb.dot(bb);
     for(int i = 0; i < stepofconj; i++){
         rkrk = rk.squaredNorm();
-        if((rkrk / yy) < 1e-10) break;  //20240224 1e-12 takes too much time for 100k
+        if((rkrk / yy) < 1e-12) break;
         Apk = (varcmp * Actimesx(pk,timemethod) + ve * pk) ;
         ak = rkrk / Apk.dot(pk);
         xk += ak * pk;
-        if(_check)
-        cout << "   step" <<  i << ": " << pk.array().abs().sum()*ak <<endl;
+        if(_check){
+            cout << "   step" <<  i << ": " << pk.array().abs().sum()*ak <<endl;
+        }
+        
         rk -= ak * Apk;
         bk = rk.squaredNorm() / rkrk;
         pk = rk + bk * pk;
@@ -2139,17 +2201,19 @@ void read_grmAB_oneCPU(string file, int start, int end){
 
 //20240620
 void read_realcov_search_withmiss(string covfile){
-     cout << "the number of covariances is: " << C << endl;
-    int covidnum = 186870;
-    MatrixXf Cmat502492(covidnum, C - 1);
-    VectorXi idcov(covidnum);
+    int linenum = countValidLines(covfile);
+    C = countItemnumber(covfile) - 1;
+    cout << "Reading quantitative covariates from [" << covfile << "]" << endl;
+    MatrixXf Cmat502492(linenum, C - 1);
+    VectorXi idcov(linenum);
     _Cmat.resize(n, C);
     //MatrixXf cov = MatrixXf::Zero(n, C);
     string index,covitem,s;
     int i,j,temp,indextemp;
-    ifstream covin(covfile, ios::in );
+    
+    ifstream covin(covfile, ios::in);
     if (!covin.is_open()) cout << "can not open the covfile\n";
-    for (i = 0; i < covidnum; i++) {
+    for (i = 0; i < linenum; i++) {
         getline(covin, covitem);
         temp = stoi(covitem);
         idcov(i) = temp;
@@ -2164,7 +2228,7 @@ void read_realcov_search_withmiss(string covfile){
     }
     for (i = 0; i < n; i++) {
         indextemp = grmid[nomissgrmid[i]]; //the first number in each line of grmfile: id
-        for(j = 0; j< covidnum; j++){
+        for(j = 0; j< linenum; j++){
             if(idcov(j) == indextemp){
                 _Cmat.row(i).head(C - 1) = Cmat502492.row(j);
                 break;
@@ -2172,9 +2236,10 @@ void read_realcov_search_withmiss(string covfile){
         }
         _Cmat(i,C - 1) = 1.0;
     }
-    cout << _Cmat.row(0) << endl;
+    //cout << _Cmat.bottomRightCorner(5, 5) << endl;
     covin.close();
     Cmat502492.resize(0, 0);
+    cout << C - 1 << " covariates of " << linenum << " individuals were read.\n" << endl;
     //MatrixXf XX = _Cmat.transpose() * _Cmat;
     MatrixXd XXd = _Cmat.cast<double>().transpose() * _Cmat.cast<double>();
     MatrixXd Imatd = MatrixXd::Identity(C,C);
@@ -2323,7 +2388,7 @@ void read_grmAB_faster_parallel(string file){
     _B.setZero(halfn, halfn);
     _diag.setZero(n);
     int coreNum = omp_get_num_procs();
-    cout << "The CPU number is: " << coreNum << endl;
+    //cout << "The CPU number is: " << coreNum << endl;
     int i = 0;
     long long element = (long long)halfn * (long long)(halfn + 1) / 2;
     long long unit = element / (long long)coreNum;
@@ -2335,7 +2400,7 @@ void read_grmAB_faster_parallel(string file){
     startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
     startend(1, coreNum - 1) = halfn;
     
-    cout << startend << endl;
+    //cout << startend << endl;
     
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
@@ -2346,23 +2411,20 @@ void read_grmAB_faster_parallel(string file){
 
     long long element2 = (long long)n * (long long)(n + 1) / 2 - element;
     unit = element2 / (long long) coreNum;
-    cout << unit << endl;
-    unit = element2 / coreNum;
-    cout << unit << endl;
     startend(0, 0) = halfn;
     long long uniti, unitiele;
     int sqrtu, flooru;
     i = 1;
-    cout << unit * i << endl;
-    cout << unit * i + element<< endl;
-    cout << sqrt((unit * i + element)*2) << endl;
+    //cout << unit * i << endl;
+    //cout << unit * i + element<< endl;
+    //cout << sqrt((unit * i + element)*2) << endl;
     for(i = 1; i< coreNum; i++){
         startend(0, i) = floor(sqrt(2 * (unit * i + element)  - 0.25) + 0.5);
     }
     startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
     startend(1, coreNum - 1) = n;
     
-    cout << startend << endl;
+    //cout << startend << endl;
     
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
@@ -2370,11 +2432,6 @@ void read_grmAB_faster_parallel(string file){
         //read_grmAB_oneCPU_withmiss(file, startend(0, i), startend(1, i));
         read_grmAB_oneCPU_withmiss_batch(file, startend(0, i), startend(1, i));
     }
-    
-    // cout << _A.topLeftCorner(5, 5) << endl;
-    // cout << _A.bottomRightCorner(5, 5) << endl;
-    // cout <<_diag.head(5) << endl;
-    // cout <<_diag.tail(5) << endl;
     
 }
 
@@ -2913,7 +2970,7 @@ void large_mhe_v3(string grmlist, string mhefile, MatrixXf ymat, int segment){
         //remles(t,r) = (1.0 - remles.row(t).head(r).sum()) / n * (n - C);
         rights(t,r) = n - 1.0;
     }
-    _A.resize(1, 1); _B.resize(1, 1); 
+    _A.resize(1, 1); _B.resize(1, 1);
     //cout << remles << endl;
     cout << "OK1" << endl;
     float xxxxAA, term1, term4;
@@ -2945,7 +3002,7 @@ void large_mhe_v3(string grmlist, string mhefile, MatrixXf ymat, int segment){
     MatrixXd Cd = _C.cast<double>();
     MatrixXd Ci = Cd.ldlt().solve(Imatd);
     MatrixXd Sd = S.cast<double>();
-    _StoC = (Cd.ldlt().solve(Sd)).cast<float>(); 
+    _StoC = (Cd.ldlt().solve(Sd)).cast<float>();
     //end = clock();
     //cout <<  "StoC matrix is ready, using: " << (double)(end - start) / CLOCKS_PER_SEC << endl;
     cout << "the StoC matrix is:" << endl << _StoC << endl;
@@ -3048,8 +3105,7 @@ void read_grmAB_oneCPU_forrt(string file, int start, int end, float var){
 void read_grmAB_forrt_parallel(string file, float var){
     int halfn = (n + 1)/2;
     int coreNum = omp_get_num_procs();
-    //int coreNum = 10;
-    cout << "The CPU number is: " << coreNum << endl;
+    //cout << "The CPU number is: " << coreNum << endl;
     int i = 0;
     long long element = (long long)halfn * (long long)(halfn + 1) / 2;
     long long unit = element / (long long)coreNum;
@@ -3060,7 +3116,7 @@ void read_grmAB_forrt_parallel(string file, float var){
     }
     startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
     startend(1, coreNum - 1) = halfn;
-    cout << startend << endl;
+    //cout << startend << endl;
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
         //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
@@ -3074,7 +3130,7 @@ void read_grmAB_forrt_parallel(string file, float var){
     }
     startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
     startend(1, coreNum - 1) = n;
-    cout << startend << endl;
+    //cout << startend << endl;
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
         //read_grmAB_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
@@ -3083,7 +3139,7 @@ void read_grmAB_forrt_parallel(string file, float var){
 }
 
 
-//20240409 20240430change 20240520
+//20240409 20240430change 20240520 20250530
 void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, int yid){
     cout << "The number of random vector is: " << numofrt << endl;
     vector<string> grms;
@@ -3096,8 +3152,8 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         cout << grmitem << endl;
     } while (!list.eof());
     list.close();
-    r = grms.size(); 
-    cout << "There are "<<  r <<" groups (except the error)"  << endl;
+    r = grms.size();
+    cout << "These "<<  r << " GRMs (except the error) are included in the model."  << endl;
     
     clock_t start, end;
     VectorXf y = ymat.col(0); //20240624
@@ -3128,7 +3184,7 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         }
     }
     infile.close();
-    cout << "The initial value by HE is: " << varcmp.transpose() << endl;
+    cout << "The initial values are: \n" << varcmp.transpose() << endl << endl;
     
 
     
@@ -3136,8 +3192,9 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
     _singlebin.resize(1);
     _singlebin[0].A.setZero(halfn, halfn); _singlebin[0].B.setZero(halfn, halfn);
     
-    int loopnum = 5;
+    int loopnum = 8;
     MatrixXf varcmpmat(loopnum, r + 1);
+    _check = false;
     for (int loop = 0; loop < loopnum; loop++){
         _A.setZero(halfn, halfn);
         _B.setZero(halfn, halfn);
@@ -3145,36 +3202,44 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         start = clock();
        
         for (int i = 0; i < r; i++) {
-            cout << "Reading the " << i + 1 <<"th GRM for V" << endl;
+            cout << "Reading the " << getOrdinal(i + 1) <<" GRM for calculating V of iteration " << loop + 1 << endl;
             read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
             //read_grmAB_forrandtr(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
-        if(loop == 0) _check = true;
+        
         //Viy = conjugate(1.0, varcmp(r), y, 1);
-        cout << "calculating Vix of the random vector: " << endl;
+        cout << "calculating Vix of the random vectors" << endl;
 #pragma omp parallel for
         for (int i = 0; i <= numofrt; i++) {
-            cout << i + 1 << " " << endl;
+            //cout << i + 1 << " ";
             if(i < numofrt)
                Vix.col(i) = conjugate(1.0, varcmp(r), xs.col(i), 1);
-            else
+            else{
+                if(loop == 0) {
+                    //_check = true;
+                    //cout << "\nThe convergence of random vectors:" << endl;
+                }
                 Viy = conjugate(1.0, varcmp(r), y, 1);
+                _check = false;
+            }
         }
         //cout << Vix.topLeftCorner(5, 5) << endl;
-        _check = false;
+        
+        //cout << endl;
         _singlebin.resize(1);
         _singlebin[0].A = _A;_singlebin[0].B = _B;_singlebin[0].diag = _diag;  //store V
         
+        cout << "Reading GRMs for calculating Aix of iteration " << loop + 1 << endl;
         for (int i = 0; i < r; i++) {  //read second time
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
             //read_grmAB_faster(grms[i] + ".grm.bin");
-            cout << "calculating A" << i + 1 << "x of the random vector: " << endl;
+            cout << "calculating A" << i + 1 << "x of the random vectors" << endl;
 #pragma omp parallel for
                 for (int j = 0; j < numofrt; j++) {
-                    cout << j + 1 << " ";
+                    //cout << j + 1 << " ";
                     Ax.col(j) = Actimesx(xs.col(j), 1);
                 }
-            cout << endl;
+            //cout << endl;
             R1(i) = Ax.cwiseProduct(Vix).sum();
             AViy.col(i) = Actimesx(Viy, 1);
             R2(i) = Viy.dot(AViy.col(i));
@@ -3202,15 +3267,41 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         //cout << R1 << endl;
         //cout << R2 << endl;
         //cout << AI << endl;
-        cout << varcmp.transpose() << endl;
+        cout << "The variance estimates after iteration " << loop + 1 << " are: \n"<< varcmp.transpose() << endl;
         varcmpmat.row(loop) = varcmp.transpose();
         if(loop == 0){
             end = clock();
-            cout <<  "1 iteration using: " << (double)(end - start) / CLOCKS_PER_SEC << endl;
+            cout <<  "The iteration 1 finished, taking " << (double)(end - start) / CLOCKS_PER_SEC << " seconds." << endl;
         }
+        cout << endl;
     }
-    cout  << "The REMLranftr is: " << endl  << varcmpmat << endl;
-    cout  << "The variance-covariance matrix is: " << endl  << AIi.cast<float>() << endl; //250514
+    cout  << endl << "The variance estimates of each iteration are: " << endl ;
+    int col_width = 10;
+    for (int i = 0; i < r; ++i) {
+        std::cout << std::setw(col_width) << "V(G" + std::to_string(i+1) + ")";
+    }
+    std::cout << std::setw(col_width) << "V(E)" << std::endl << varcmpmat << endl;
+    cout  << endl << "The heritability estimates are:" << endl;
+    varcmp = varcmp / varcmp.sum();
+    col_width = 13;
+    cout << std::left;
+    cout << setw(7) << "Group"
+         << setw(col_width) << "Heritability"
+         << setw(col_width) << "SE" << endl;
+
+    for (int i = 0; i < r; ++i) {
+        cout << setw(7) << "G" + std::to_string(i+1)
+             << setw(col_width) << varcmp(i)
+             << setw(col_width) << sqrt(AIi(i, i)) << endl;
+    }
+
+    cout << setw(7) << "Sum"
+         << setw(col_width) << 1.0 - varcmp(r)
+         << setw(col_width) << sqrt(AIi(r, r)) << endl;
+
+    cout << std::right;
+    
+    cout  << endl << "The variance-covariance matrix is: " << endl  << AIi.cast<float>() << endl << endl ; //250514
 }
 
 //20240525
@@ -3226,7 +3317,7 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         cout << grmitem << endl;
     } while (!list.eof());
     list.close();
-    r = grms.size(); 
+    r = grms.size();
     cout << "There are "<<  r <<" groups (except the error)"  << endl;
     
     clock_t start, end;
@@ -3348,28 +3439,29 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
 }
 
 
-//20240618
+//20240618 20250529
 VectorXf read_phe_search_commonid(string phefile, int whichy){
-    int nraw = 146603;  //这个值在hpc中改为表现型的实际总个体数！！！
     bool match;
+    vector<int> yid_vec;    // whole phe id
+    vector<float> yraw_vec; // whole phe value
+    string line, token;
     vector<float> nomissy;
-    VectorXf yraw = VectorXf::Zero(nraw);
-    VectorXi yid(nraw);
     string index,pheitem,s;
     int i,j,temp,indextemp;
     ifstream phe(phefile, ios::in);
     if (!phe.is_open()) cout << "can not open the file phe\n";
-    for (i = 0; i < nraw; i++) {
-        getline(phe,pheitem);
-        istringstream is(pheitem);
+    while (std::getline(phe, line)) {
+        istringstream is(line);
         is >> s; is >> s;
-        yid(i) = stoi(s);
+        yid_vec.push_back(stoi(s));
         for (j = 0; j < whichy; j++) {
             is >> s;
         }
-        yraw(i) = stof(s);
-        //if(i<20) cout << yraw(i) << endl;
+        yraw_vec.push_back(stof(s));
     }
+    int nraw = yid_vec.size();
+    VectorXi yid = Eigen::Map<VectorXi>(yid_vec.data(), nraw);
+    VectorXf yraw = Eigen::Map<VectorXf>(yraw_vec.data(), nraw);
     nomissy.clear(); nomissgrmid.clear();
     for (i = 0; i < ngrm; i++) {
         indextemp = grmid[i];
@@ -3397,8 +3489,8 @@ VectorXf read_phe_search_commonid(string phefile, int whichy){
 //    }
     
     n = nomissy.size();
-    cout << "n is: " << n << endl;
-    cout << nomissgrmid.size() << endl;
+    cout << "The sample size with non-missing phenotype value is: " << n << endl;
+    //cout << nomissgrmid.size() << endl;
     VectorXf yscale = VectorXf::Zero(n);
     yscale = Eigen::Map<VectorXf> (&nomissy[0], n);
     //cout << yscale.head(20) << endl;
@@ -3482,8 +3574,11 @@ struct MpheReader {
     }
 };
 
+
+
 int main(int argc, const char * argv[]) {
-    // Parse args
+    // insert code here...
+
     args::ArgumentParser arg_parser("fastgreml");
     args::HelpFlag help(arg_parser, "help", "Display help menu", {'h', "help"});
     args::CompletionFlag completion(arg_parser, {"complete"});
@@ -3513,28 +3608,14 @@ int main(int argc, const char * argv[]) {
     std::string init_values = args::get(arg_init_values);
     std::string output_path = args::get(arg_output_path);
 
-    std::cout << "All args: \n" << "grmlist_path=" << grmlist_path << '\n'
-              << "mphe=" << mphe.i << " " << mphe.path << '\n'
-              << "cov path=" << cov_path << '\n'
-              << "init values=" << init_values << '\n'
-              << "output path=" << output_path << '\n';
+    std::cout << "\n\nAll args: \n" << "grmlist_path: " << grmlist_path << '\n'
+              << "mphe_path: " << mphe.path << ",\n"
+              << "           and the " << getOrdinal(mphe.i) << " phenotype will be analyzed." << '\n'
+              << "cov_path: " << cov_path << '\n'
+              << "init_value_path:" << init_values << '\n'
+              << "output_path: " << output_path << "\n\n";
 
-    // Parse args ends
-
-    // insert code here...
-    //
-
-//    VectorXf varcmpori = utemp;
-//    res(0) = reml_iteration(y, A, varcmpori, 10)(0);
-//    res(1) = remle(gtemp, y);
-//    res(2) = Hed(gtemp, y);
-//    cout <<
-    string para;
-            if (strncmp(argv[1], "--c", 3)==0){
-                para = &argv[1][3];
-            }
-    corenumber = stof(para);
-    cout << corenumber << endl;
+    corenumber = mphe.i;
     
     VectorXf aaa,bbb,ccc;
     struct rusage usage;
@@ -3543,16 +3624,11 @@ int main(int argc, const char * argv[]) {
     //string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat1/Continuous/50.pheno";
      // string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat3/Continuous/23105.pheno";
    // string phefile = "/storage/yangjianLab/baiweiyang/SV_Imputation_Project_final/PHENOTYPE/Continuous_final_652/23105.pheno";
-   string covfile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/cov325.txt";
-    
-   // string phefile = "/storage/yangjianLab/xuting/preprocessing/nm29_46567.txt";
-    string grmlist = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/mgrm_nml_noIG_12group.txt";
-    //string grmlist = "/storage/yangjianLab/xuting/preprocessing/nm29/group8/WES_6group_mgrm.txt";
-    //string grmfile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_GRM/step4_merged_GRM_by_MAF_5w/UKB_GRM_450k_group1";
-    //string grmfile = "/storage/yangjianLab/xuting/data/grm/shuhua5w/UKB_GRM_450k_group1";
-    string grmfile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/grmhe1";
-    string mphefile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/nm27_146603.txt";
-    string mhefile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/mhe_g12.txt";   
+    string grmfile = "/Users/tim/Desktop/LDMStest/testdata/group1";
+    string grmlist = grmlist_path;
+    string covfile = cov_path;
+    string mphefile = mphe.path;
+    string mhefile = init_values;
      
     clock_t start, end; 
     start = clock();
@@ -3590,14 +3666,14 @@ int main(int argc, const char * argv[]) {
 //    y /= (y.norm() / sqrt(n - 1));
     
     getrusage(RUSAGE_SELF, &usage);
-    cout << "Memory usage: " << usage.ru_maxrss / 1024.0  << " MB" << endl;
+    cout << "Memory usage: " << usage.ru_maxrss / 1024.0  << " MB.\n" << endl;
     
 
     int grmmethod = 1;  //0 for grm, 1 for grmAB, 2 for sparsegrm, 3 for gemline
     start = clock();
     //readgrm(grmmethod, grmfile);
     end = clock();
-    cout <<  "grm is ready, using: " << (double)(end - start) / CLOCKS_PER_SEC << endl;
+    //cout <<  "grm is ready, using: " << (double)(end - start) / CLOCKS_PER_SEC << endl;
 
     ymat = ymatproj(ymat);   //20240114
     //randtr_small(mhefile, grmlist, ymat, 39, corenumber); 
@@ -3607,7 +3683,7 @@ int main(int argc, const char * argv[]) {
     //large_remle(grmlist, mhefile, ymat, 29);
     //MatrixXf ab = mremlrandtr_mtraits(ymat, C, 50, 1);
     //cout << "the remltandtr is:"<< endl << ab << endl;
-    large_randtr(mhefile, grmlist, ymat, 99, corenumber);
+    large_randtr(mhefile, grmlist, ymat, 50, corenumber);
     
     //ymat.col(0) = ymat.col(5);
     //VectorXf rr = mremlrandtr(ymat.col(0), C, 30, 1); 
@@ -3651,11 +3727,5 @@ int main(int argc, const char * argv[]) {
     //r3 = remlerandtrwithlanczos(y, C, 0.6, 10);
     //cout << "the estimated heritability is: " <<r3(0)/r3.sum() << endl;
 
-    
-    getrusage(RUSAGE_SELF, &usage);
-    cout << "Memory usage: " << usage.ru_maxrss / 1024.0  << " MB" << endl;
-
-  
-    cout << "Hello, World!\n";
     return 0;
 }
