@@ -5,15 +5,18 @@
 #  define EIGEN_USE_MKL_ALL
 #endif
 
-#include <iostream>
-#include <iomanip>
-#include <fstream>
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
-#include <vector>
-#include <random>
 #include <ctime>
-#include <time.h>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <random>
 #include <sys/resource.h>
+#include <ctime>
+#include <vector>
 
 #include <omp.h>
 #include <Eigen/Eigen>
@@ -2199,8 +2202,157 @@ void read_grmAB_oneCPU(string file, int start, int end){
     fin.close();
 }
 
+struct Covariates {
+    int rows = -1;
+    // Total columns of the covariates file.
+    int cols = -1;
+    std::vector<int> ids;
+    // Flattened data matrix, it's eigen friendly.
+    std::vector<float> data;
+
+    // We ignored the first two columns, so data size should be rows * (cols - 2)
+    bool valid() { return rows > 0 && cols > 0 && data.size() == rows * (cols - 2); }
+};
+
+bool is_blank(const std::string &s) {
+    return std::all_of(s.begin(), s.end(),
+                       [](unsigned char c) { return std::isspace(c); });
+}
+
+// C++ std::stof is slower than its C version.
+bool fast_strtof(const std::string &s, float &out) {
+    char *end = nullptr;
+    const char *cstr = s.c_str();
+    out = std::strtof(cstr, &end);
+    return end != cstr && *end == '\0';
+}
+
+/// Read the covariates file, ignore the blank lines.
+Covariates read_covariates(const std::string &cov_file) {
+    Covariates cov;
+
+    std::ifstream ifs_cov(cov_file);
+
+    if (!ifs_cov.is_open()) {
+        std::cout << "open cov file failed, path=" << cov_file << std::endl;
+        return cov;
+    }
+
+    std::string line;
+    std::getline(ifs_cov, line);
+    std::istringstream iss(line);
+    std::string token;
+    int cols = 0;
+
+    while (iss >> token) {
+        cols += 1;
+    }
+
+    if (cols == 0) {
+        std::cout << "open cov file success, but data has empty columns"
+                  << std::endl;
+        return cov;
+    }
+
+    // Reset file stream
+    ifs_cov.clear();
+    ifs_cov.seekg(0, std::ios::beg);
+
+    // Pre-reserve can decrease peak RSS memory.
+    cov.data.reserve(13000000);
+    cov.ids.reserve(500000);
+
+    int rows = 0;
+    while (std::getline(ifs_cov, line)) {
+        if (is_blank(line)) {
+            continue;
+        }
+
+        rows += 1;
+
+        iss.clear();
+        iss.str(line);
+        iss >> token;
+        cov.ids.push_back(std::stoi(token));
+
+        // Ignore the first two columns
+        iss >> token;
+
+        while (iss >> token) {
+            float val = 0.0f;
+            if (fast_strtof(token, val)) {
+                cov.data.push_back(val);
+            } else {
+                cov.data.push_back(0.0f);
+            }
+        }
+    }
+
+    cov.rows = rows;
+    cov.cols = cols;
+
+    if (!cov.valid()) {
+        std::cout << "read cov success, but cov data is empty" << std::endl;
+        return cov;
+    }
+
+    return cov;
+}
+
+void read_realcov_search_withmiss_v2(string covfile) {
+    auto start = std::chrono::high_resolution_clock::now();
+    Covariates cov = read_covariates(covfile);
+    C = cov.cols - 1;
+
+    std::cout << "Reading quantitative covariates from [" << covfile << "]"
+              << std::endl;
+
+    Eigen::Map<Eigen::MatrixXf> Cmat502492(cov.data.data(), cov.rows,
+                                           cov.cols - 2);
+    Eigen::Map<Eigen::VectorXi> idcov =
+        Eigen::VectorXi::Map(cov.ids.data(), cov.ids.size());
+
+    _Cmat.resize(n, C);
+
+    for (int i = 0; i < n; i++) {
+        // the first number in each line of grmfile: id
+        int grm_idx = grmid[nomissgrmid[i]];
+        for (int j = 0; j < cov.rows; j++) {
+            if (idcov(j) == grm_idx) {
+                _Cmat.row(i).head(C - 1) = Cmat502492.row(j);
+                break;
+            }
+        }
+        _Cmat(i, C - 1) = 1.0;
+    }
+
+    // NOTE: idcov and Cmat502492 are cleared here!
+    cov.data.clear();
+    cov.data.shrink_to_fit();
+    cov.ids.clear();
+    cov.ids.shrink_to_fit();
+
+    std::cout << C - 1 << " covariates of " << cov.rows
+              << " individuals were read.\n"
+              << std::endl;
+    // MatrixXf XX = _Cmat.transpose() * _Cmat;
+    MatrixXd XXd = _Cmat.cast<double>().transpose() * _Cmat.cast<double>();
+    MatrixXd Imatd = MatrixXd::Identity(C, C);
+    // MatrixXd XXd = XX.cast<double>();
+    _XXdinv = XXd.ldlt().solve(Imatd);
+    //_XXCmat = _XXdinv.cast<float>() * _Cmat.transpose();
+    _XXCmat = (_XXdinv * _Cmat.transpose().cast<double>()).cast<float>();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "[perf] read_realcov_search_withmiss_v2 cost: "
+              << duration.count() << " milliseconds" << std::endl;
+}
+
 //20240620
 void read_realcov_search_withmiss(string covfile){
+    auto start = std::chrono::high_resolution_clock::now();
     int linenum = countValidLines(covfile);
     C = countItemnumber(covfile) - 1;
     cout << "Reading quantitative covariates from [" << covfile << "]" << endl;
@@ -2247,6 +2399,11 @@ void read_realcov_search_withmiss(string covfile){
     _XXdinv = XXd.ldlt().solve(Imatd);
     //_XXCmat = _XXdinv.cast<float>() * _Cmat.transpose();
     _XXCmat = (_XXdinv * _Cmat.transpose().cast<double>()).cast<float>();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    // 16s
+    std::cout << "[perf] Time taken: " << duration.count() << " milliseconds" << std::endl;
 }
 
 
@@ -3144,17 +3301,16 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
     cout << "The number of random vector is: " << numofrt << endl;
     vector<string> grms;
     string grmitem;
-    ifstream list(grmlist, ios::in);
-    if (!list.is_open()) cout << "can not open the file phe\n";
-    do {
-        getline(list,grmitem);
+    ifstream ifs_grm(grmlist, ios::in);
+    if (!ifs_grm.is_open()) cout << "can not open the file phe\n";
+    while (std::getline(ifs_grm, grmitem)) {
         grms.push_back(grmitem);
         cout << grmitem << endl;
-    } while (!list.eof());
-    list.close();
+    }
+    ifs_grm.close();
     r = grms.size();
     cout << "These "<<  r << " GRMs (except the error) are included in the model."  << endl;
-    
+
     clock_t start, end;
     VectorXf y = ymat.col(0); //20240624
     VectorXf varcmp(r + 1);
@@ -3167,7 +3323,7 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
     //xsy.block(0, 0, n, numofrt) = MatrixXf::Zero(n, numofrt).unaryExpr([](float val) { return Rademacher(val); });
     //xsy.block(0, 0, n, numofrt) = _xs;
     //xsy.col(numofrt) = y;
-    
+
     ifstream infile(mhefile, ios::in); //read initial value of varcmp
     if (!infile.is_open()) cout << "can not open the file phe\n";
     string line, s;
@@ -3187,11 +3343,11 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
     cout << "The initial values are: \n" << varcmp.transpose() << endl << endl;
     
 
-    
+
     int halfn = (n + 1)/2;
     _singlebin.resize(1);
     _singlebin[0].A.setZero(halfn, halfn); _singlebin[0].B.setZero(halfn, halfn);
-    
+
     int loopnum = 8;
     MatrixXf varcmpmat(loopnum, r + 1);
     _check = false;
@@ -3200,13 +3356,13 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         _B.setZero(halfn, halfn);
         _diag.setZero(n);
         start = clock();
-       
+
         for (int i = 0; i < r; i++) {
             cout << "Reading the " << getOrdinal(i + 1) <<" GRM for calculating V of iteration " << loop + 1 << endl;
             read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
             //read_grmAB_forrandtr(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
-        
+
         //Viy = conjugate(1.0, varcmp(r), y, 1);
         cout << "calculating Vix of the random vectors" << endl;
 #pragma omp parallel for
@@ -3224,11 +3380,11 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
             }
         }
         //cout << Vix.topLeftCorner(5, 5) << endl;
-        
+
         //cout << endl;
         _singlebin.resize(1);
         _singlebin[0].A = _A;_singlebin[0].B = _B;_singlebin[0].diag = _diag;  //store V
-        
+
         cout << "Reading GRMs for calculating Aix of iteration " << loop + 1 << endl;
         for (int i = 0; i < r; i++) {  //read second time
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
@@ -3300,7 +3456,7 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
          << setw(col_width) << sqrt(AIi(r, r)) << endl;
 
     cout << std::right;
-    
+
     cout  << endl << "The variance-covariance matrix is: " << endl  << AIi.cast<float>() << endl << endl ; //250514
 }
 
@@ -3319,7 +3475,7 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
     list.close();
     r = grms.size();
     cout << "There are "<<  r <<" groups (except the error)"  << endl;
-    
+
     clock_t start, end;
     VectorXf y = ymat.col(0); //20240624
     VectorXf varcmp(r + 1);
@@ -3329,7 +3485,7 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
     MatrixXd Imatd = MatrixXd::Identity(r + 1, r + 1), AId, AIi;
     MatrixXf xs = MatrixXf::Zero(n, numofrt).unaryExpr([](float val) { return Rademacher(val); });
 
-    
+
     ifstream infile(mhefile, ios::in); //read initial value of varcmp
     if (!infile.is_open()) cout << "can not open the file phe\n";
     string line, s;
@@ -3349,9 +3505,9 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
     cout << "The initial value by HE is: " << varcmp.transpose() << endl;
     
 
-    
+
     int halfn = (n + 1)/2;
-    
+
     int loopnum = 2;
     MatrixXf varcmpmat(loopnum, r + 1);
     for (int loop = 0; loop < loopnum; loop++){
@@ -3359,7 +3515,7 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         _B.setZero(halfn, halfn);
         _diag.setZero(n);
         start = clock();
-       
+
         for (int i = 0; i < r; i++) {
             cout << "Reading the " << i + 1 <<"th GRM for V" << endl;
             read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
@@ -3378,7 +3534,7 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         }
         //cout << Vix.topLeftCorner(5, 5) << endl;
         _check = false;
-        
+
         for (int i = 0; i < r; i++) {  //read second time
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
             //read_grmAB_faster(grms[i] + ".grm.bin");
@@ -3398,13 +3554,13 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         _B.setZero(halfn, halfn);
         _diag.setZero(n);
         start = clock();
-       
+
         for (int i = 0; i < r; i++) {
             cout << "Reading the " << i + 1 <<"th GRM for V" << endl;
             read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
             //read_grmAB_forrandtr(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
-        
+
         AViy.col(r) = Viy;
 #pragma omp parallel for
         for (int i = 0; i <= r; i++) {
@@ -3487,7 +3643,7 @@ VectorXf read_phe_search_commonid(string phefile, int whichy){
 //    for (i = 0; i < 100; i++) {
 //        cout <<grmidwithy[i] << endl;
 //    }
-    
+
     n = nomissy.size();
     cout << "The sample size with non-missing phenotype value is: " << n << endl;
     //cout << nomissgrmid.size() << endl;
@@ -3520,7 +3676,7 @@ MatrixXf read_phe_search_formhe(string phefile){
     phe.seekg(0, ios::beg);
     for (i = 0; i < nraw; i++) {
         getline(phe,pheitem);
-        
+
         istringstream is(pheitem);
         is >> s; is >> s;
         yid(i) = stoi(s);
@@ -3616,7 +3772,7 @@ int main(int argc, const char * argv[]) {
               << "output_path: " << output_path << "\n\n";
 
     corenumber = mphe.i;
-    
+
     VectorXf aaa,bbb,ccc;
     struct rusage usage;
     //   string grmfile = "/storage/yangjianLab/baiweiyang/SV_Imputation_Project_final/GREML_74/GRM_for_greml/LDref.EUR.maf0.01.hwe-6.chrAuto.SNV";
@@ -3624,13 +3780,13 @@ int main(int argc, const char * argv[]) {
     //string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat1/Continuous/50.pheno";
      // string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat3/Continuous/23105.pheno";
    // string phefile = "/storage/yangjianLab/baiweiyang/SV_Imputation_Project_final/PHENOTYPE/Continuous_final_652/23105.pheno";
-    string grmfile = "/Users/tim/Desktop/LDMStest/testdata/group1";
+    string grmfile = "/Users/kai/Projects/ldms-data/group1";
     string grmlist = grmlist_path;
     string covfile = cov_path;
     string mphefile = mphe.path;
     string mhefile = init_values;
-     
-    clock_t start, end; 
+
+    clock_t start, end;
     start = clock();
     // MatrixXf carrot;
     // carrot.setZero(260000, 260000);
@@ -3641,33 +3797,34 @@ int main(int argc, const char * argv[]) {
 
 
     start = clock();
-    
+
     read_grmid(grmfile);
     //read_realphe_all(phefile);
-    
+
     //VectorXf y = merge_pheid_grmid();
     end = clock();
     //cout <<  "merge is done, using " << (double)(end - start) / CLOCKS_PER_SEC << "s" << endl;
     //cout <<  n << " indviduals are in common" <<endl;
-    
+
     VectorXf y = read_phe_search_commonid(mphefile, corenumber);
     MatrixXf ymat(n, 1);
     ymat.col(0) = y;
-    
+
     //read_realcov_ofcommonid(covfile);
     //n = 46567;
     //read_realcov_search(covfile);
-    
+
     //read_grmlist(phefile, grmlist, covfile);
-    read_realcov_search_withmiss(covfile); //20240620
+    read_realcov_search_withmiss_v2(covfile); //20240620
+    // read_realcov_search_withmiss(covfile); //20240620
 
 //    y = proj_x(y);
 //    y -= VectorXf::Constant(n, y.mean());
 //    y /= (y.norm() / sqrt(n - 1));
-    
+
     getrusage(RUSAGE_SELF, &usage);
     cout << "Memory usage: " << usage.ru_maxrss / 1024.0  << " MB.\n" << endl;
-    
+
 
     int grmmethod = 1;  //0 for grm, 1 for grmAB, 2 for sparsegrm, 3 for gemline
     start = clock();
@@ -3676,18 +3833,18 @@ int main(int argc, const char * argv[]) {
     //cout <<  "grm is ready, using: " << (double)(end - start) / CLOCKS_PER_SEC << endl;
 
     ymat = ymatproj(ymat);   //20240114
-    //randtr_small(mhefile, grmlist, ymat, 39, corenumber); 
-    
+    //randtr_small(mhefile, grmlist, ymat, 39, corenumber);
+
     //testremlemhe(mphefile, grmlist, covfile, ymat, C, 2);
-    //large_mhe_v3(grmlist, mhefile, ymat, 50);  
+    //large_mhe_v3(grmlist, mhefile, ymat, 50);
     //large_remle(grmlist, mhefile, ymat, 29);
     //MatrixXf ab = mremlrandtr_mtraits(ymat, C, 50, 1);
     //cout << "the remltandtr is:"<< endl << ab << endl;
     large_randtr(mhefile, grmlist, ymat, 50, corenumber);
-    
+
     //ymat.col(0) = ymat.col(5);
-    //VectorXf rr = mremlrandtr(ymat.col(0), C, 30, 1); 
-    
+    //VectorXf rr = mremlrandtr(ymat.col(0), C, 30, 1);
+
     //mhe.resize(r + 1);
     //mhe << 0.05, 0.05,0.05,0.05,0.05, 0.75;
    // writemultiseeds(ymat, 0.5, 50, 29, seed240120);
@@ -3705,25 +3862,25 @@ int main(int argc, const char * argv[]) {
    // cout << "multilanczos: " << (rrr / rrr.sum()).transpose() << endl;
     //VectorXf test = testformulLanzcos(ymat, C, 0.5, 50, 6, seedfile);
     //cout << "the estimated heritability is: " << test.transpose() << endl;
-    
+
     //vector<Lseed> seeds = readseeds(0.5, 50, 6,seedfile);
      //VectorXf h2s = remlreg_seeds(ymat, C, 0.5, 50, 6, seedfile);
    // cout << "the estimated heritability is: " << h2s << endl;
-    
+
         getrusage(RUSAGE_SELF, &usage);
         cout << "Memory usage: " << usage.ru_maxrss / 1024.0  << " MB" << endl;
-    
-    
+
+
     //cout << "sum(grm) = " << (_A.sum()+_B.sum())*2+_diag.sum() << endl;
     //cout << "tr(grm) = " << _diag.sum() << endl;
 
-    //cout << _diag.head(100) << endl; 
-    
+    //cout << _diag.head(100) << endl;
+
     Eigen::Vector2f r3;
-    
+
     //r3 = remlesavememory(y, C, grmmethod);
     //cout << "the estimated heritability is: " <<r3(0)/r3.sum() << endl;
-    
+
     //r3 = remlerandtrwithlanczos(y, C, 0.6, 10);
     //cout << "the estimated heritability is: " <<r3(0)/r3.sum() << endl;
 
