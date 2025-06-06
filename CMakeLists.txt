@@ -7,6 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS  OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
+if(UNIX AND NOT APPLE)
+  set(LINUX TRUE)
+endif()
+
 # Fetch 3rd parties
 include(FetchContent)
 
@@ -14,10 +18,10 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 set(FETCHCONTENT_QUIET OFF)
 
 FetchContent_Declare(
-    eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.0
-    GIT_SHALLOW TRUE
+  eigen
+  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+  GIT_TAG 3.4.0
+  GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(Eigen)
 
@@ -31,9 +35,16 @@ if(APPLE)
   set(OpenMP_CXX_LIB_NAMES "omp")
   set(OpenMP_CXX_INCLUDE_DIR "/opt/homebrew/opt/libomp/include")
   set(OpenMP_omp_LIBRARY "/opt/homebrew/opt/libomp/lib/libomp.dylib")
+  find_package(OpenMP REQUIRED)
 endif()
 
-find_package(OpenMP REQUIRED)
+if(LINUX)
+  set(OMP_LIBRARY "/usr/lib/libgomp.so")
+  set(MKL_DIR "/opt/intel/mkl/lib/intel64/cmake/mkl")
+  set(MKL_THREADING "gnu_thread")
+  find_package(OpenMP REQUIRED)
+  find_package(MKL REQUIRED)
+endif()
 
 FetchContent_Declare(args
   GIT_REPOSITORY https://github.com/Taywee/args.git
@@ -63,7 +74,14 @@ if(APPLE)
   endif()
 endif()
 
-target_link_libraries(${PROJECT_NAME}
-  PRIVATE Eigen3::Eigen OpenMP::OpenMP_CXX taywee::args
-)
+target_link_libraries(${PROJECT_NAME} PRIVATE Eigen3::Eigen taywee::args)
+
+if(LINUX)
+  target_compile_options(${PROJECT_NAME} PRIVATE -fpermissive)
+  target_link_libraries(${PROJECT_NAME} PRIVATE MKL::MKL)
+endif()
+
+if(APPLE)
+  target_link_libraries(${PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
+endif()
 

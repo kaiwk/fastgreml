@@ -22,6 +22,13 @@
 #include <Eigen/Eigen>
 #include <args.hxx>
 
+#if defined(__linux__)
+#include <fcntl.h>    // open
+#include <sys/mman.h> // mmap
+#include <sys/stat.h> // fstat
+#include <unistd.h>   // close
+#endif
+
 using namespace std;
 using Eigen::MatrixXf;
 using Eigen::VectorXf;
@@ -73,6 +80,35 @@ std::vector<std::string> split_string(const std::string &str, char sep) {
     tokens.push_back(str.substr(start));
     return tokens;
 }
+
+class PerfTimer {
+public:
+    explicit PerfTimer(const std::string& name = "")
+        : name_(name), start_time_(std::chrono::high_resolution_clock::now()), stopped_(false) {}
+
+    ~PerfTimer() {
+        if (!stopped_) {
+            stop();
+        }
+    }
+
+    void stop() {
+        if (stopped_) return;  // Avoid double stop
+
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time_).count();
+
+        std::cout << "[perf] ===> " << (name_.empty() ? "" : name_ + ": ")
+                  << duration_ms << " ms" << std::endl;
+
+        stopped_ = true;
+    }
+
+private:
+    std::string name_;
+    std::chrono::high_resolution_clock::time_point start_time_;
+    bool stopped_;
+};
 
 struct Grmbin{  //230512
     MatrixXf A, B, CmatA;
@@ -2300,7 +2336,7 @@ Covariates read_covariates(const std::string &cov_file) {
 }
 
 void read_realcov_search_withmiss_v2(string covfile) {
-    auto start = std::chrono::high_resolution_clock::now();
+    PerfTimer _perf_timer("read_realcov_search_withmiss_v2");
     Covariates cov = read_covariates(covfile);
     C = cov.cols - 1;
 
@@ -2342,17 +2378,11 @@ void read_realcov_search_withmiss_v2(string covfile) {
     _XXdinv = XXd.ldlt().solve(Imatd);
     //_XXCmat = _XXdinv.cast<float>() * _Cmat.transpose();
     _XXCmat = (_XXdinv * _Cmat.transpose().cast<double>()).cast<float>();
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "[perf] read_realcov_search_withmiss_v2 cost: "
-              << duration.count() << " milliseconds" << std::endl;
 }
 
 //20240620
 void read_realcov_search_withmiss(string covfile){
-    auto start = std::chrono::high_resolution_clock::now();
+    PerfTimer _perf_timer("read_realcov_search_withmiss");
     int linenum = countValidLines(covfile);
     C = countItemnumber(covfile) - 1;
     cout << "Reading quantitative covariates from [" << covfile << "]" << endl;
@@ -2399,11 +2429,6 @@ void read_realcov_search_withmiss(string covfile){
     _XXdinv = XXd.ldlt().solve(Imatd);
     //_XXCmat = _XXdinv.cast<float>() * _Cmat.transpose();
     _XXCmat = (_XXdinv * _Cmat.transpose().cast<double>()).cast<float>();
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    // 16s
-    std::cout << "[perf] Time taken: " << duration.count() << " milliseconds" << std::endl;
 }
 
 
@@ -3295,6 +3320,141 @@ void read_grmAB_forrt_parallel(string file, float var){
     }
 }
 
+struct MappedFile {
+  void *addr = nullptr;
+  size_t size = 0;
+
+  bool valid() { return addr != nullptr && size != 0; }
+
+  void *memory_bound() {
+      return (unsigned char*)addr + size;
+  }
+
+  void unmap() {
+    munmap(addr, size);
+    addr = nullptr;
+    size = 0;
+  }
+};
+
+MappedFile mmap_file(const char *filename) {
+  MappedFile mapped_file;
+  int fd = open(filename, O_RDONLY);
+  if (fd == -1) {
+    std::cout << "open file failed, path=" << filename << std::endl;
+    return mapped_file;
+  }
+
+  struct stat st;
+  if (fstat(fd, &st) == -1) {
+    close(fd);
+    std::cout << "failed to get file size, path=" << filename << std::endl;
+    return mapped_file;
+  }
+  size_t filesize = st.st_size;
+
+  if (filesize % sizeof(float) != 0) {
+    std::cout << "file size is not a multiple of sizeof(float)!" << std::endl;
+    return mapped_file;
+  }
+
+  void *mapped_addr = mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
+
+  close(fd);
+
+  if (mapped_addr == MAP_FAILED) {
+    std::cout << "failed to mmap file, path=" << filename << std::endl;
+    return mapped_file;
+  }
+
+  mapped_file.addr = mapped_addr;
+  mapped_file.size = filesize;
+
+  std::cout << "mmap file success, addr=" << mapped_file.addr << ", size=" << mapped_file.size << std::endl;
+
+  return mapped_file;
+}
+
+void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
+    long long loclast;
+    int size = sizeof (float);
+    float f_buf = 0.0;
+    for(int i = start; i< end; i++){
+        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        long long nomiss_i = (long long)(nomissgrmid[i]);
+        loclast = nomiss_i * (nomiss_i + 1) / 2;
+        float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
+
+        for(int j = 0; j<= i; j++){
+            f_buf = values[nomissgrmid[j]];
+            if(i == j) _diag(i) += f_buf * var;
+            else _A(i,j) += f_buf * var;
+        }
+    }
+}
+
+void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
+    int halfn = (n + 1)/2;
+    long long loclast;
+    int size = sizeof (float);
+    float f_buf = 0.0;
+    for(int i = start; i< end; i++){
+        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        long long nomiss_i = (long long)(nomissgrmid[i]);
+        loclast = nomiss_i * (nomiss_i + 1) / 2;
+        float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
+        for(int j = 0; j<= i; j++){
+            f_buf = values[nomissgrmid[j]];
+            if(i == j) _diag(i) += f_buf * var;
+            else if(j < halfn) _B(i - halfn,j) += f_buf * var;
+            else _A(j - halfn, i - halfn) += f_buf * var;
+        }
+    }
+}
+
+/// read_grmAB_forrt_parallel with mmap on Linux
+void read_grmAB_forrt_parallel_v2(string file, float var){
+    int halfn = (n + 1)/2;
+    int coreNum = omp_get_num_procs();
+    //cout << "The CPU number is: " << coreNum << endl;
+    int i = 0;
+    long long element = (long long)halfn * (long long)(halfn + 1) / 2;
+    long long unit = element / (long long)coreNum;
+    MatrixXi startend(2, coreNum);
+    startend(0, 0) = 0;
+    for(i = 1; i< coreNum; i++){
+        startend(0, i) = floor(sqrt(2 * unit * (long long)i - 0.25) + 0.5);
+    }
+    startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
+    startend(1, coreNum - 1) = halfn;
+    //cout << startend << endl;
+
+    MappedFile mapped = mmap_file(file.c_str());
+    if (!mapped.valid()) return;
+
+#pragma omp parallel for
+    for(i = 0; i< coreNum; i++){
+        //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
+        read_grmA_oneCPU_forrt_withmiss_v2(mapped, startend(0, i), startend(1, i), var);
+    }
+    long long element2 = (long long)n * (long long)(n + 1) / 2 - element;
+    unit = element2 / (long long) coreNum;
+    startend(0, 0) = halfn;
+    for(i = 1; i< coreNum; i++){
+        startend(0, i) = floor(sqrt(2 * (unit * i + element)  - 0.25) + 0.5);
+    }
+    startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
+    startend(1, coreNum - 1) = n;
+    //cout << startend << endl;
+#pragma omp parallel for
+    for(i = 0; i< coreNum; i++){
+        //read_grmAB_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
+        read_grmAB_oneCPU_forrt_withmiss_v2(mapped, startend(0, i), startend(1, i), var);
+    }
+
+    mapped.unmap();
+}
+
 
 //20240409 20240430change 20240520 20250530
 void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, int yid){
@@ -3359,7 +3519,7 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
 
         for (int i = 0; i < r; i++) {
             cout << "Reading the " << getOrdinal(i + 1) <<" GRM for calculating V of iteration " << loop + 1 << endl;
-            read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
+            read_grmAB_forrt_parallel_v2(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
             //read_grmAB_forrandtr(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
 
@@ -3735,6 +3895,8 @@ struct MpheReader {
 int main(int argc, const char * argv[]) {
     // insert code here...
 
+    PerfTimer _perf_timer("total");
+
     args::ArgumentParser arg_parser("fastgreml");
     args::HelpFlag help(arg_parser, "help", "Display help menu", {'h', "help"});
     args::CompletionFlag completion(arg_parser, {"complete"});
@@ -3780,7 +3942,7 @@ int main(int argc, const char * argv[]) {
     //string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat1/Continuous/50.pheno";
      // string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat3/Continuous/23105.pheno";
    // string phefile = "/storage/yangjianLab/baiweiyang/SV_Imputation_Project_final/PHENOTYPE/Continuous_final_652/23105.pheno";
-    string grmfile = "/Users/kai/Projects/ldms-data/group1";
+    string grmfile = "/home/kai/WestlakeProjects/ldms-data/group1";
     string grmlist = grmlist_path;
     string covfile = cov_path;
     string mphefile = mphe.path;
