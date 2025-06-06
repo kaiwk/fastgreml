@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS  OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
+# HPC is Linux environment
+set(BUILD_ON_HPC OFF)
+
 if(UNIX AND NOT APPLE)
   set(LINUX TRUE)
 endif()
@@ -17,13 +20,15 @@ include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 set(FETCHCONTENT_QUIET OFF)
 
-FetchContent_Declare(
-  eigen
-  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-  GIT_TAG 3.4.0
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(Eigen)
+if(NOT BUILD_ON_HPC)
+  FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG 3.4.0
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(Eigen)
+endif()
 
 # Find OpenMP
 if(APPLE)
@@ -38,13 +43,14 @@ if(APPLE)
   find_package(OpenMP REQUIRED)
 endif()
 
-if(LINUX)
+if(LINUX AND NOT BUILD_ON_HPC)
   set(OMP_LIBRARY "/usr/lib/libgomp.so")
   set(MKL_DIR "/opt/intel/mkl/lib/intel64/cmake/mkl")
   set(MKL_THREADING "gnu_thread")
-  find_package(OpenMP REQUIRED)
-  find_package(MKL REQUIRED)
 endif()
+
+find_package(OpenMP REQUIRED)
+find_package(MKL REQUIRED)
 
 FetchContent_Declare(args
   GIT_REPOSITORY https://github.com/Taywee/args.git
