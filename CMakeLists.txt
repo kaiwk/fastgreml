@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS  OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
 # HPC is Linux environment
-set(BUILD_ON_HPC OFF)
+option(BUILD_ON_HPC OFF)
 
 if(UNIX AND NOT APPLE)
   set(LINUX TRUE)
@@ -51,6 +51,7 @@ endif()
 
 find_package(OpenMP REQUIRED)
 find_package(MKL REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 FetchContent_Declare(args
   GIT_REPOSITORY https://github.com/Taywee/args.git
