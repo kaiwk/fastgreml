@@ -21,6 +21,8 @@
 #include <omp.h>
 #include <Eigen/Eigen>
 #include <args.hxx>
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 #if defined(__linux__)
 #include <fcntl.h>    // open
@@ -109,6 +111,62 @@ private:
     std::chrono::high_resolution_clock::time_point start_time_;
     bool stopped_;
 };
+
+
+// Specialize formatter for Eigen matrices
+namespace fmt {
+template <typename Scalar, int Rows, int Cols, int Options, int MaxRows, int MaxCols>
+struct formatter<Eigen::Matrix<Scalar, Rows, Cols, Options, MaxRows, MaxCols>> {
+    // Parse format spec (we ignore it here)
+    typename format_parse_context::iterator parse(format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    // Format using operator<< to std::ostringstream
+    template <typename FormatContext>
+    typename FormatContext::iterator format(
+        const Eigen::Matrix<Scalar, Rows, Cols, Options, MaxRows, MaxCols>& mat,
+        FormatContext& ctx) {
+
+        std::ostringstream oss;
+        oss << mat;
+        return format_to(ctx.out(), "{}", oss.str());
+    }
+};
+
+template <typename Derived>
+struct formatter<Eigen::DenseBase<Derived>> {
+    typename format_parse_context::iterator parse(format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    template <typename FormatContext>
+    typename FormatContext::iterator format(const Eigen::DenseBase<Derived>& expr,
+                                            FormatContext& ctx) {
+        std::ostringstream oss;
+        oss << expr;
+        return format_to(ctx.out(), "{}", oss.str());
+    }
+};
+
+template <typename T>
+struct formatter<T, char, typename std::enable_if<
+    std::is_base_of<Eigen::EigenBase<T>, T>::value>::type>
+{
+    // No custom formatting, so ignore format spec
+    typename format_parse_context::iterator parse(format_parse_context &ctx) {
+      return ctx.begin();
+    }
+
+    // Format Eigen object by streaming to std::ostringstream
+    template <typename FormatContext>
+    typename FormatContext::iterator format(const T& mat, FormatContext& ctx) {
+        std::ostringstream oss;
+        oss << mat; // Uses Eigen's operator<<
+        return format_to(ctx.out(), "{}", oss.str());
+    }
+};
+} // namespace fmt
 
 struct Grmbin{  //230512
     MatrixXf A, B, CmatA;
@@ -330,23 +388,22 @@ void read_realphe_all(string phefile){
     ny = yid.size();
 }
 
-void read_grmid(string grmidfile){
+void read_grmid(string grmidfile) {
     grmid.clear();
-    string grmidfull = grmidfile + ".grm.id";
-    cout << "Reading grm.id file from [" << grmidfull << "]." << endl;
-    string grmiditem;
-    ifstream fin(grmidfull, ios::in);
-    if (!fin.is_open()) cout << "can not open the grmid file\n";
-    getline(fin,grmiditem);
+    string grm_id_file_path = grmidfile + ".grm.id";
+    spdlog::info("Reading grm.id file from [{}]", grm_id_file_path);
+    string line;
+    ifstream fin(grm_id_file_path, ios::in);
+    if (!fin.is_open()) spdlog::error("can not open the grmid file");
+    getline(fin, line);
     while (!fin.eof()){
-        grmid.push_back(stoi(grmiditem));
-        getline(fin,grmiditem);
+        grmid.push_back(stoi(line));
+        getline(fin,line);
     }
     fin.close();
     ngrm = grmid.size();
-    //n = ngrm; //20240223
-    grmidwithy.resize(ngrm); //20240618
-    cout << "The number of individuals included in GRM is: " << ngrm << endl;
+    grmidwithy.resize(ngrm);
+    spdlog::info("The number of individuals included in GRM is: {}", ngrm);
 }
 
 void read_grmline(string grmfile){
@@ -359,7 +416,7 @@ void read_grmline(string grmfile){
     //cout << grmline.capacity() <<endl;
     long long count = 1;
     ifstream fin( grmfile, ios::in | ios::binary);
-    if (!fin.is_open()) cout << "can not open the file\n";
+    if (!fin.is_open()) spdlog::error("can not open the file");
     int size = sizeof (float);
     float f_buf = 0.0;
     fin.read((char*) &f_buf, size);
@@ -374,7 +431,7 @@ void read_grmline(string grmfile){
                 totaltime  = (double)(grmsize / 1000000000) * (double)(end - start) / CLOCKS_PER_SEC;
             }
             cumutime = (double)(end - start) / CLOCKS_PER_SEC;
-            cout << "grm data reading process: " << ceil(cumutime) << "s/" << ceil(totaltime) <<"s"<< endl;
+            spdlog::info("grm data reading process: {}s/{}s", ceil(cumutime), ceil(totaltime));
         }
         grmline.push_back(f_buf);
         fin.read((char*) &f_buf, size);
@@ -382,7 +439,7 @@ void read_grmline(string grmfile){
     fin.close();
     //cout << grmline.size() << endl;
     if (grmline.size() != (long long)ngrm * ((long long)ngrm + 1)/2)
-        cout << "grmfile and grmid don't match\n";
+        spdlog::info("grmfile and grmid don't match");
 }
 
 
@@ -416,7 +473,7 @@ void read_realcov_ofcommonid(string covfile){
     string index,covitem,s;
     int i,j,temp,indextemp;
     ifstream covin(covfile, ios::in );
-    if (!covin.is_open()) cout << "can not open the covfile\n";
+    if (!covin.is_open()) spdlog::info("can not open the covfile");
     for (i = 0; i < n; i++) {
         indextemp = grmid[grmloc[i]]; //the first number in each line of grmfile: id
         do {
@@ -447,15 +504,15 @@ void read_grm(string file){
     _grm = MatrixXf::Zero(n, n);
     int i = 0, j = 0;
     ifstream fin( file, ios::in | ios::binary);
-    if (!fin.is_open()) cout << "can not open the file\n";
+    if (!fin.is_open()) spdlog::info("can not open the file");
     int size = sizeof (float);
     float f_buf = 0.0;
     for (i = 0; i < n; i++) {
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         for (j = 0; j <= i; j++) {
-            fin.read((char*) &f_buf, size);
-            _grm(j, i) = _grm(i, j) = f_buf;
-           // _grm(i, j) = f_buf;
+          fin.read((char *)&f_buf, size);
+          _grm(j, i) = _grm(i, j) = f_buf;
+          // _grm(i, j) = f_buf;
         }
     }
     fin.close();
@@ -2340,8 +2397,7 @@ void read_realcov_search_withmiss_v2(string covfile) {
     Covariates cov = read_covariates(covfile);
     C = cov.cols - 1;
 
-    std::cout << "Reading quantitative covariates from [" << covfile << "]"
-              << std::endl;
+    spdlog::info("Reading quantitative covariates from [{}]", covfile);
 
     Eigen::Map<Eigen::MatrixXf> Cmat502492(cov.data.data(), cov.rows,
                                            cov.cols - 2);
@@ -2368,9 +2424,7 @@ void read_realcov_search_withmiss_v2(string covfile) {
     cov.ids.clear();
     cov.ids.shrink_to_fit();
 
-    std::cout << C - 1 << " covariates of " << cov.rows
-              << " individuals were read.\n"
-              << std::endl;
+    spdlog::info("{} covariates of {},  individuals were read\n", C - 1, cov.rows);
     // MatrixXf XX = _Cmat.transpose() * _Cmat;
     MatrixXd XXd = _Cmat.cast<double>().transpose() * _Cmat.cast<double>();
     MatrixXd Imatd = MatrixXd::Identity(C, C);
@@ -3341,20 +3395,20 @@ MappedFile mmap_file(const char *filename) {
   MappedFile mapped_file;
   int fd = open(filename, O_RDONLY);
   if (fd == -1) {
-    std::cout << "open file failed, path=" << filename << std::endl;
+    spdlog::error("open file failed, path={}", filename);
     return mapped_file;
   }
 
   struct stat st;
   if (fstat(fd, &st) == -1) {
     close(fd);
-    std::cout << "failed to get file size, path=" << filename << std::endl;
+    spdlog::error("failed to get file size, path={}", filename);
     return mapped_file;
   }
   size_t filesize = st.st_size;
 
   if (filesize % sizeof(float) != 0) {
-    std::cout << "file size is not a multiple of sizeof(float)!" << std::endl;
+    spdlog::error("file size is not a multiple of sizeof(float)!");
     return mapped_file;
   }
 
@@ -3363,14 +3417,14 @@ MappedFile mmap_file(const char *filename) {
   close(fd);
 
   if (mapped_addr == MAP_FAILED) {
-    std::cout << "failed to mmap file, path=" << filename << std::endl;
+    spdlog::error("failed to mmap file, path=", filename);
     return mapped_file;
   }
 
   mapped_file.addr = mapped_addr;
   mapped_file.size = filesize;
 
-  std::cout << "mmap file success, addr=" << mapped_file.addr << ", size=" << mapped_file.size << std::endl;
+  spdlog::info("mmap file success, addr={}, size={}",  mapped_file.addr, mapped_file.size);
 
   return mapped_file;
 }
@@ -3380,7 +3434,7 @@ void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, f
     int size = sizeof (float);
     float f_buf = 0.0;
     for(int i = start; i< end; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         long long nomiss_i = (long long)(nomissgrmid[i]);
         loclast = nomiss_i * (nomiss_i + 1) / 2;
         float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
@@ -3458,18 +3512,18 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
 
 //20240409 20240430change 20240520 20250530
 void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, int yid){
-    cout << "The number of random vector is: " << numofrt << endl;
+    spdlog::info("The number of random vector is: {}", numofrt);
     vector<string> grms;
     string grmitem;
     ifstream ifs_grm(grmlist, ios::in);
     if (!ifs_grm.is_open()) cout << "can not open the file phe\n";
     while (std::getline(ifs_grm, grmitem)) {
         grms.push_back(grmitem);
-        cout << grmitem << endl;
+        spdlog::info("{}", grmitem);
     }
     ifs_grm.close();
     r = grms.size();
-    cout << "These "<<  r << " GRMs (except the error) are included in the model."  << endl;
+    spdlog::info("These {} GRMs (except the error) are included in the model.", r);
 
     clock_t start, end;
     VectorXf y = ymat.col(0); //20240624
@@ -3500,7 +3554,7 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         }
     }
     infile.close();
-    cout << "The initial values are: \n" << varcmp.transpose() << endl << endl;
+    spdlog::info("The initial values are: {}\n", varcmp.transpose());
     
 
 
@@ -3518,13 +3572,13 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         start = clock();
 
         for (int i = 0; i < r; i++) {
-            cout << "Reading the " << getOrdinal(i + 1) <<" GRM for calculating V of iteration " << loop + 1 << endl;
+            spdlog::info("Reading the {} GRM for calculating V of iteration {}", getOrdinal(i + 1), loop + 1);
             read_grmAB_forrt_parallel_v2(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
             //read_grmAB_forrandtr(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
 
         //Viy = conjugate(1.0, varcmp(r), y, 1);
-        cout << "calculating Vix of the random vectors" << endl;
+        spdlog::info("calculating Vix of the random vectors");
 #pragma omp parallel for
         for (int i = 0; i <= numofrt; i++) {
             //cout << i + 1 << " ";
@@ -3545,11 +3599,11 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         _singlebin.resize(1);
         _singlebin[0].A = _A;_singlebin[0].B = _B;_singlebin[0].diag = _diag;  //store V
 
-        cout << "Reading GRMs for calculating Aix of iteration " << loop + 1 << endl;
+        spdlog::info("Reading GRMs for calculating Aix of iteration {}", loop + 1);
         for (int i = 0; i < r; i++) {  //read second time
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
             //read_grmAB_faster(grms[i] + ".grm.bin");
-            cout << "calculating A" << i + 1 << "x of the random vectors" << endl;
+            spdlog::info("calculating A{}x of the random vectors", i + 1);
 #pragma omp parallel for
                 for (int j = 0; j < numofrt; j++) {
                     //cout << j + 1 << " ";
@@ -3583,11 +3637,11 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
         //cout << R1 << endl;
         //cout << R2 << endl;
         //cout << AI << endl;
-        cout << "The variance estimates after iteration " << loop + 1 << " are: \n"<< varcmp.transpose() << endl;
+        spdlog::info("The variance estimates after iteration {}  are: {}\n", loop + 1, varcmp.transpose());
         varcmpmat.row(loop) = varcmp.transpose();
         if(loop == 0){
             end = clock();
-            cout <<  "The iteration 1 finished, taking " << (double)(end - start) / CLOCKS_PER_SEC << " seconds." << endl;
+            spdlog::info("The iteration 1 finished, taking {} seconds.", (double)(end - start) / CLOCKS_PER_SEC);
         }
         cout << endl;
     }
@@ -3755,7 +3809,6 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
 }
 
 
-//20240618 20250529
 VectorXf read_phe_search_commonid(string phefile, int whichy){
     bool match;
     vector<int> yid_vec;    // whole phe id
@@ -3765,7 +3818,7 @@ VectorXf read_phe_search_commonid(string phefile, int whichy){
     string index,pheitem,s;
     int i,j,temp,indextemp;
     ifstream phe(phefile, ios::in);
-    if (!phe.is_open()) cout << "can not open the file phe\n";
+    if (!phe.is_open()) spdlog::error("can not open the file phe");
     while (std::getline(phe, line)) {
         istringstream is(line);
         is >> s; is >> s;
@@ -3805,7 +3858,7 @@ VectorXf read_phe_search_commonid(string phefile, int whichy){
 //    }
 
     n = nomissy.size();
-    cout << "The sample size with non-missing phenotype value is: " << n << endl;
+    spdlog::info("The sample size with non-missing phenotype value is: {}", n);
     //cout << nomissgrmid.size() << endl;
     VectorXf yscale = VectorXf::Zero(n);
     yscale = Eigen::Map<VectorXf> (&nomissy[0], n);
@@ -3985,7 +4038,7 @@ int main(int argc, const char * argv[]) {
 //    y /= (y.norm() / sqrt(n - 1));
 
     getrusage(RUSAGE_SELF, &usage);
-    cout << "Memory usage: " << usage.ru_maxrss / 1024.0  << " MB.\n" << endl;
+    spdlog::info("Memory usage: {} MB", usage.ru_maxrss / 1024.0);
 
 
     int grmmethod = 1;  //0 for grm, 1 for grmAB, 2 for sparsegrm, 3 for gemline
@@ -4029,9 +4082,8 @@ int main(int argc, const char * argv[]) {
      //VectorXf h2s = remlreg_seeds(ymat, C, 0.5, 50, 6, seedfile);
    // cout << "the estimated heritability is: " << h2s << endl;
 
-        getrusage(RUSAGE_SELF, &usage);
-        cout << "Memory usage: " << usage.ru_maxrss / 1024.0  << " MB" << endl;
-
+    getrusage(RUSAGE_SELF, &usage);
+    spdlog::info("Memory usage: {} MB", usage.ru_maxrss / 1024.0);
 
     //cout << "sum(grm) = " << (_A.sum()+_B.sum())*2+_diag.sum() << endl;
     //cout << "tr(grm) = " << _diag.sum() << endl;

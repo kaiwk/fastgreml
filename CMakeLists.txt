@@ -30,6 +30,14 @@ if(NOT BUILD_ON_HPC)
   FetchContent_MakeAvailable(Eigen)
 endif()
 
+# Fetch spdlog
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG v1.15.3)
+
+FetchContent_MakeAvailable(spdlog)
+
 # Find OpenMP
 if(APPLE)
   # Use manual flags for OpenMP with Apple Clang
@@ -92,3 +100,4 @@ if(APPLE)
   target_link_libraries(${PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
+target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)

@@ -1,3 +1,5 @@
 #!/usr/bin/env sh
 
-cmake --build build/Release
+BUILD_TYPE=RelWithDebInfo
+
+cmake --build build/${BUILD_TYPE}
