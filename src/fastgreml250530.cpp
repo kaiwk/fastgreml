@@ -3436,7 +3436,6 @@ MappedFile mmap_file(const char *filename) {
 }
 
 void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
-    PerfTimer _perf_timer("read grmA oneCPU forrt withmiss v2");
     long long loclast;
     int size = sizeof (float);
     float f_buf = 0.0;
@@ -3455,7 +3454,6 @@ void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, f
 }
 
 void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
-    PerfTimer _perf_timer("read grmAB oneCPU forrt withmiss v2");
     int halfn = (n + 1)/2;
     long long loclast;
     int size = sizeof (float);
@@ -3511,7 +3509,6 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
     //cout << startend << endl;
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
-        spdlog::info("thread_id={}", omp_get_thread_num());
         //read_grmAB_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
         read_grmAB_oneCPU_forrt_withmiss_v2(mapped, startend(0, i), startend(1, i), var);
     }
