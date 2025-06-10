@@ -3432,8 +3432,6 @@ MappedFile mmap_file(const char *filename) {
   mapped_file.addr = mapped_addr;
   mapped_file.size = filesize;
 
-  spdlog::info("mmap file success, addr={}, size={}",  mapped_file.addr, mapped_file.size);
-
   return mapped_file;
 }
 
@@ -3497,10 +3495,8 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
     MappedFile mapped = mmap_file(file.c_str());
     if (!mapped.valid()) return;
 
-    spdlog::info("path={}, core number={}", file, coreNum);
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
-        spdlog::info("thread_id={}", omp_get_thread_num());
         //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
         read_grmA_oneCPU_forrt_withmiss_v2(mapped, startend(0, i), startend(1, i), var);
     }
@@ -4004,8 +4000,9 @@ int main(int argc, const char * argv[]) {
     //string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat1/Continuous/50.pheno";
      // string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat3/Continuous/23105.pheno";
    // string phefile = "/storage/yangjianLab/baiweiyang/SV_Imputation_Project_final/PHENOTYPE/Continuous_final_652/23105.pheno";
-    // string grmfile = "/home/kai/WestlakeProjects/ldms-data/group1";
-    string grmfile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/grmhe1_nml_noIG";
+    string grmfile = "/home/kai/WestlakeProjects/ldms-data/group1";
+
+    // string grmfile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/grmhe1_nml_noIG";
     string grmlist = grmlist_path;
     string covfile = cov_path;
     string mphefile = mphe.path;

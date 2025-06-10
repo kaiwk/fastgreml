@@ -94,6 +94,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Eigen3::Eigen taywee::args)
 if(LINUX)
   target_compile_options(${PROJECT_NAME} PRIVATE -fpermissive)
   target_compile_options(${PROJECT_NAME} PRIVATE -DMKL_ILP64)
+  target_compile_options(${PROJECT_NAME} PRIVATE -fopenmp)
   target_link_libraries(${PROJECT_NAME} PRIVATE MKL::MKL)
 endif()
 
