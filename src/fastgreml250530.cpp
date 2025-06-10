@@ -3341,6 +3341,9 @@ void read_grmAB_oneCPU_forrt(string file, int start, int end, float var){
 
 //20240430
 void read_grmAB_forrt_parallel(string file, float var){
+    spdlog::info("path={}", file);
+    PerfTimer _perf_timer("read grmAB forrt parallel");
+
     int halfn = (n + 1)/2;
     int coreNum = omp_get_num_procs();
     //cout << "The CPU number is: " << coreNum << endl;
@@ -3423,6 +3426,9 @@ MappedFile mmap_file(const char *filename) {
     return mapped_file;
   }
 
+  madvise(mapped_addr, filesize, MADV_WILLNEED);
+  madvise(mapped_addr, filesize, MADV_SEQUENTIAL);
+
   mapped_file.addr = mapped_addr;
   mapped_file.size = filesize;
 
@@ -3432,6 +3438,7 @@ MappedFile mmap_file(const char *filename) {
 }
 
 void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
+    PerfTimer _perf_timer("read grmA oneCPU forrt withmiss v2");
     long long loclast;
     int size = sizeof (float);
     float f_buf = 0.0;
@@ -3450,6 +3457,7 @@ void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, f
 }
 
 void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
+    PerfTimer _perf_timer("read grmAB oneCPU forrt withmiss v2");
     int halfn = (n + 1)/2;
     long long loclast;
     int size = sizeof (float);
@@ -3470,6 +3478,7 @@ void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, 
 
 /// read_grmAB_forrt_parallel with mmap on Linux
 void read_grmAB_forrt_parallel_v2(string file, float var){
+    PerfTimer _perf_timer("read grmAB forrt parallel v2");
     int halfn = (n + 1)/2;
     int coreNum = omp_get_num_procs();
     //cout << "The CPU number is: " << coreNum << endl;
@@ -3488,8 +3497,10 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
     MappedFile mapped = mmap_file(file.c_str());
     if (!mapped.valid()) return;
 
+    spdlog::info("path={}, core number={}", file, coreNum);
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
+        spdlog::info("thread_id={}", omp_get_thread_num());
         //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
         read_grmA_oneCPU_forrt_withmiss_v2(mapped, startend(0, i), startend(1, i), var);
     }
@@ -3504,6 +3515,7 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
     //cout << startend << endl;
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
+        spdlog::info("thread_id={}", omp_get_thread_num());
         //read_grmAB_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
         read_grmAB_oneCPU_forrt_withmiss_v2(mapped, startend(0, i), startend(1, i), var);
     }
@@ -3575,6 +3587,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
         for (int i = 0; i < r; i++) {
             spdlog::info("Reading the {} GRM for calculating V of iteration {}", getOrdinal(i + 1), loop + 1);
             read_grmAB_forrt_parallel_v2(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
+            // read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
             //read_grmAB_forrandtr(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
 
@@ -3991,8 +4004,8 @@ int main(int argc, const char * argv[]) {
     //string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat1/Continuous/50.pheno";
      // string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat3/Continuous/23105.pheno";
    // string phefile = "/storage/yangjianLab/baiweiyang/SV_Imputation_Project_final/PHENOTYPE/Continuous_final_652/23105.pheno";
-    string grmfile = "/home/kai/WestlakeProjects/ldms-data/group1";
-    // string grmfile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/grmhe1_nml_noIG";
+    // string grmfile = "/home/kai/WestlakeProjects/ldms-data/group1";
+    string grmfile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/grmhe1_nml_noIG";
     string grmlist = grmlist_path;
     string covfile = cov_path;
     string mphefile = mphe.path;
