@@ -2,7 +2,9 @@
 
 module load cmake eigen intelmkl
 
-BUILD_TYPE=RelWithDebInfo
+# BUILD_TYPE=RelWithDebInfo
+BUILD_TYPE=Release
+# BUILD_TYPE=Debug
 
 cmake -DBUILD_ON_HPC=ON \
     -DCMAKE_PREFIX_PATH="/soft/devtools/eigen-3.4.0;${CMAKE_PREFIX_PATH}" \
