@@ -21,7 +21,6 @@
 #include <omp.h>
 #include <Eigen/Eigen>
 #include <args.hxx>
-#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #if defined(__linux__)
@@ -81,6 +80,10 @@ std::vector<std::string> split_string(const std::string &str, char sep) {
     }
     tokens.push_back(str.substr(start));
     return tokens;
+}
+
+bool compare_float(float a, float b, float epsilon = 1e-5f) {
+  return std::fabs(a - b) < epsilon;
 }
 
 class PerfTimer {
@@ -402,7 +405,7 @@ void read_grmid(string grmidfile) {
     }
     fin.close();
     ngrm = grmid.size();
-    grmidwithy.resize(ngrm);
+    grmidwithy.resize(ngrm, false);
     spdlog::info("The number of individuals included in GRM is: {}", ngrm);
 }
 
@@ -741,7 +744,7 @@ MatrixXf read_realcov(string grmid, string covfile){
 //    return x;
 //}
 
-VectorXf proj_x(VectorXf x){
+VectorXf proj_x(const VectorXf& x) {
     
     //VectorXd XXCmatx = _XXdinv * _Cmat.cast<double>().transpose() * x.cast<double>();
     //VectorXd XXCmatx = _XXCmat.cast<double>() * x.cast<double>();
@@ -749,11 +752,10 @@ VectorXf proj_x(VectorXf x){
     //VectorXf XXCmatx = _XXCmat * x;
     //return x - _Cmat * XXCmatx;
     return x - _Cmat * (_XXCmat * x);
-    
 }
 
 
-float grmlinetimesvectorparallel(int i, VectorXf x){
+float grmlinetimesvectorparallel(int i, const VectorXf& x){
     float element = 0.0;
     int j = 0;
         for (j = 0; j< i; j++){
@@ -774,7 +776,7 @@ float grmlinetimesvectorparallel(int i, VectorXf x){
     return element;
 }
 
-VectorXf grmlinetimesvector(VectorXf x){
+VectorXf grmlinetimesvector(const VectorXf& x){
     VectorXf Ax(n);
     int i = 0;
     // omp_set_num_threads(phenumber);
@@ -785,7 +787,7 @@ VectorXf grmlinetimesvector(VectorXf x){
     return Ax;
 }
 
-float grmlinetimesvectorparallel2(int i, VectorXf x){
+float grmlinetimesvectorparallel2(int i, const VectorXf& x){
     VectorXf temp(n);
     int j = 0;
         for (j = 0; j< i; j++){
@@ -806,7 +808,7 @@ float grmlinetimesvectorparallel2(int i, VectorXf x){
     return temp.dot(x);
 }
 
-VectorXf grmlinetimesvector2(VectorXf x){
+VectorXf grmlinetimesvector2(const VectorXf& x) {
     VectorXf Ax(n);
     int i = 0;
    // omp_set_num_threads(phenumber);
@@ -833,7 +835,7 @@ VectorXf grmlinetimesvectorgpt(VectorXf x){
 }
 
 
-VectorXf grmABtimesvector(VectorXf x){
+VectorXf grmABtimesvector(const VectorXf& x){
     int halfn;
     if(n % 2 == 0){
         halfn = n/2;
@@ -889,7 +891,7 @@ VectorXd grmABtimesvectorddd(VectorXd x){
 }
 
 
-VectorXf Actimesx(VectorXf x, int cho){
+VectorXf Actimesx(const VectorXf& x, int cho){
     if (cho  == 0)
     return proj_x(_grm * proj_x(x));
     else if (cho == 1)
@@ -939,7 +941,7 @@ VectorXf Hec(VectorXf y, int numc){
     return he_trAc;
 }
 
-VectorXf conjugate(float varcmp, float ve, VectorXf x, int timemethod){
+VectorXf conjugate(float varcmp, float ve, const VectorXf& x, int timemethod){
     VectorXf Viy(n), ViViy(n), bb(n), xk(n), rk(n), pk(n),Apk(n);
     float rkrk, ak, yy, bk = 0.0;
     bb = x;
@@ -1107,8 +1109,8 @@ VectorXf remlesavememory(VectorXf ytemp, int numc, int timemethod){
         yViy = ytemp.dot(Viy);
         d = Viy.dot(Actimesx(Viy,timemethod) + b * Viy);
         varcmp += (yViy - n + numc) / d;
-        cout << varcmp <<endl;
-        if( abs((yViy - n + numc) / d ) < 0.000001) break;
+        cout << varcmp << endl;
+        if(std::abs((yViy - n + numc) / d) < 0.000001) break;
     }
     Eigen::Vector2f varcmps(varcmp, a + b * varcmp);
     end = clock();
@@ -1680,16 +1682,16 @@ MatrixXf read_mulphe(string phefile, int numofy){
 }
 
 //20240114
-MatrixXf ymatproj(MatrixXf ymat){
+void ymatproj(MatrixXf& ymat){
     VectorXf yt(n);
     int numofy = ymat.cols();
+    int sqrt_n = std::sqrt(n - 1);
     for (int i = 0; i < numofy; i++) {
-     yt = proj_x(ymat.col(i));
-     yt -= VectorXf::Constant(n, yt.mean());
-     yt /= (yt.norm() / sqrt(n - 1));
-     ymat.col(i) = yt;
+        yt = proj_x(ymat.col(i));
+        yt -= VectorXf::Constant(n, yt.mean());
+        yt /= (yt.norm() / sqrt_n);
+        ymat.col(i) = yt;
     }
-    return ymat;
 }
 
 void writeseeds(MatrixXf ymat, float maxvg, int numofrt, int numofy, string seedfile){
@@ -2397,7 +2399,7 @@ void read_realcov_search_withmiss_v2(string covfile) {
     Covariates cov = read_covariates(covfile);
     C = cov.cols - 1;
 
-    spdlog::info("Reading quantitative covariates from [{}]", covfile);
+    spdlog::info("Reading quantitative covariates from [{}], n={}, rows={}, cols={}", covfile, n, cov.rows, cov.cols);
 
     Eigen::Map<Eigen::MatrixXf> Cmat502492(cov.data.data(), cov.rows,
                                            cov.cols - 2);
@@ -3511,7 +3513,7 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
 
 
 //20240409 20240430change 20240520 20250530
-void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, int yid){
+void large_randtr(const std::string& mhefile, const std::string& grmlist, const MatrixXf& ymat, int numofrt, int yid) {
     spdlog::info("The number of random vector is: {}", numofrt);
     vector<string> grms;
     string grmitem;
@@ -3555,12 +3557,11 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
     }
     infile.close();
     spdlog::info("The initial values are: {}\n", varcmp.transpose());
-    
 
-
-    int halfn = (n + 1)/2;
+    int halfn = (n + 1) / 2;
     _singlebin.resize(1);
-    _singlebin[0].A.setZero(halfn, halfn); _singlebin[0].B.setZero(halfn, halfn);
+    _singlebin[0].A.setZero(halfn, halfn);
+    _singlebin[0].B.setZero(halfn, halfn);
 
     int loopnum = 8;
     MatrixXf varcmpmat(loopnum, r + 1);
@@ -3597,7 +3598,9 @@ void large_randtr(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
 
         //cout << endl;
         _singlebin.resize(1);
-        _singlebin[0].A = _A;_singlebin[0].B = _B;_singlebin[0].diag = _diag;  //store V
+        _singlebin[0].A = _A;
+        _singlebin[0].B = _B;
+        _singlebin[0].diag = _diag;  //store V
 
         spdlog::info("Reading GRMs for calculating Aix of iteration {}", loop + 1);
         for (int i = 0; i < r; i++) {  //read second time
@@ -3810,7 +3813,6 @@ void randtr_small(string mhefile, string grmlist, MatrixXf ymat, int numofrt, in
 
 
 VectorXf read_phe_search_commonid(string phefile, int whichy){
-    bool match;
     vector<int> yid_vec;    // whole phe id
     vector<float> yraw_vec; // whole phe value
     string line, token;
@@ -3822,49 +3824,43 @@ VectorXf read_phe_search_commonid(string phefile, int whichy){
     while (std::getline(phe, line)) {
         istringstream is(line);
         is >> s; is >> s;
-        yid_vec.push_back(stoi(s));
+        yid_vec.push_back(stoi(s)); // individual ids
+        // Skip to whichy
         for (j = 0; j < whichy; j++) {
-            is >> s;
+          is >> s;
         }
-        yraw_vec.push_back(stof(s));
+        yraw_vec.push_back(stof(s)); // phenotype value
     }
     int nraw = yid_vec.size();
     VectorXi yid = Eigen::Map<VectorXi>(yid_vec.data(), nraw);
     VectorXf yraw = Eigen::Map<VectorXf>(yraw_vec.data(), nraw);
     nomissy.clear(); nomissgrmid.clear();
+
+    // phenotype value can be missed (-9), we should filter them out.
     for (i = 0; i < ngrm; i++) {
         indextemp = grmid[i];
-        match = false;
         for (j = 0; j < nraw; j++) {
             if(yid(j) == indextemp){
-                if (yraw(j)<-8.99999 && yraw(j)>-9.0001)   //missdata denoted by -9
-                    grmidwithy[i] = false;
-                else {
+                if (!compare_float(yraw(j), -9.0)) {
                     nomissy.push_back(yraw(j));
                     grmidwithy[i] = true;
                     nomissgrmid.push_back(i);
-                    match = true;
                 }
                 break;
             }
         }
-        if (!match)
-        grmidwithy[i] = false;
     }
     phe.close();
     yraw.resize(0);
-//    for (i = 0; i < 100; i++) {
-//        cout <<grmidwithy[i] << endl;
-//    }
 
+    // n is the number of nomiss data.
     n = nomissy.size();
+
     spdlog::info("The sample size with non-missing phenotype value is: {}", n);
     //cout << nomissgrmid.size() << endl;
-    VectorXf yscale = VectorXf::Zero(n);
-    yscale = Eigen::Map<VectorXf> (&nomissy[0], n);
-    //cout << yscale.head(20) << endl;
+    VectorXf yscale = Eigen::Map<VectorXf>(nomissy.data(), n);
     yscale -= VectorXf::Constant(n, yscale.mean());
-    yscale /= (yscale.norm() / sqrt(n - 1));
+    yscale /= std::sqrt(yscale.squaredNorm() / (n - 1));
     return yscale;
 }
 
@@ -3995,8 +3991,8 @@ int main(int argc, const char * argv[]) {
     //string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat1/Continuous/50.pheno";
      // string phefile = "/storage/yangjianLab/chenshuhua/project/WES/UKB_pheno/PHESANT_pheno/dat3/Continuous/23105.pheno";
    // string phefile = "/storage/yangjianLab/baiweiyang/SV_Imputation_Project_final/PHENOTYPE/Continuous_final_652/23105.pheno";
-    // string grmfile = "/home/kai/WestlakeProjects/ldms-data/group1";
-    string grmfile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/grmhe1_nml_noIG";
+    string grmfile = "/home/kai/WestlakeProjects/ldms-data/group1";
+    // string grmfile = "/storage/yangjianLab/xuting/data/grm/WGS_unrel/sample50k/grmhe1_nml_noIG";
     string grmlist = grmlist_path;
     string covfile = cov_path;
     string mphefile = mphe.path;
@@ -4048,7 +4044,7 @@ int main(int argc, const char * argv[]) {
     end = clock();
     //cout <<  "grm is ready, using: " << (double)(end - start) / CLOCKS_PER_SEC << endl;
 
-    ymat = ymatproj(ymat);   //20240114
+    ymatproj(ymat);   //20240114
     //randtr_small(mhefile, grmlist, ymat, 39, corenumber);
 
     //testremlemhe(mphefile, grmlist, covfile, ymat, C, 2);
