@@ -99,12 +99,31 @@ public:
 
     void stop() {
         if (stopped_) return;  // Avoid double stop
-
         auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time_).count();
+        auto duration = end_time - start_time_;
+        std::chrono::duration<double, std::milli> milliseconds = duration;
+        std::chrono::duration<double> seconds = duration;
+        std::chrono::duration<double, std::ratio<60>> minutes = duration;
+        std::chrono::duration<double, std::ratio<3600>> hours = duration;
 
-        std::cout << "[perf] ===> " << (name_.empty() ? "" : name_ + ": ")
-                  << duration_ms << " ms" << std::endl;
+        std::string unit = "ms";
+        double value = milliseconds.count();
+
+        if (milliseconds.count() < 1000.0) {
+          value = milliseconds.count();
+          unit = "ms";
+        } else if (seconds.count() < 60.0) {
+          value = seconds.count();
+          unit = "s";
+        } else if (minutes.count() < 60.0) {
+          value = minutes.count();
+          unit = "min";
+        } else {
+          value = hours.count();
+          unit = "h";
+        }
+
+        spdlog::info("[perf] ===> {}, cost {:.3f}{}", name_, value, unit);
 
         stopped_ = true;
     }
@@ -2238,7 +2257,7 @@ void read_grmAB_faster(string file){
     float f_buf = 0.0;
 
     for(i = 0; i< halfn; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         for(j = 0; j<= i; j++){
             fin.read((char*) &f_buf, size);
             if(i == j) _diag(i) = f_buf;
@@ -2267,7 +2286,7 @@ void read_grmA_oneCPU(string file, int start, int end){
     float f_buf = 0.0;
     fin.seekg(loc * (long long)size, ios::beg);
     for(int i = start; i< end; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         for(int j = 0; j<= i; j++){
             fin.read((char*) &f_buf, size);
             if(i == j) _diag(i) = f_buf;
@@ -2529,7 +2548,7 @@ void read_grmA_oneCPU_withmiss_batch(string file, int start, int end){
         char buffer[size * (nomissgrmid[i] + 1)];
         fin.read(buffer, size * (nomissgrmid[i] + 1));
         float* values = reinterpret_cast<float*>(buffer);
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         for(int j = 0; j<= i; j++){
             f_buf = values[nomissgrmid[j]];
            // cout << nomissgrmid[i] << endl;
@@ -2553,7 +2572,7 @@ void read_grmAB_oneCPU_withmiss_batch(string file, int start, int end){
     int size = sizeof (float);
     float f_buf = 0.0;
     for(int i = start; i< end; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
         fin.seekg(loclast * (long long)size, ios::beg);
         char buffer[size * (nomissgrmid[i] + 1)];
@@ -2578,7 +2597,7 @@ void read_grmA_oneCPU_forrt_withmiss(string file, int start, int end, float var)
     int size = sizeof (float);
     float f_buf = 0.0;
     for(int i = start; i< end; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
         fin.seekg(loclast * (long long)size, ios::beg);
         char buffer[size * (nomissgrmid[i] + 1)];
@@ -2602,7 +2621,7 @@ void read_grmAB_oneCPU_forrt_withmiss(string file, int start, int end, float var
     int size = sizeof (float);
     float f_buf = 0.0;
     for(int i = start; i< end; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
         fin.seekg(loclast * (long long)size, ios::beg);
         char buffer[size * (nomissgrmid[i] + 1)];
@@ -3307,7 +3326,7 @@ void read_grmA_oneCPU_forrt(string file, int start, int end, float var){
     float f_buf = 0.0;
     fin.seekg(loc * (long long)size, ios::beg);
     for(int i = start; i< end; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         for(int j = 0; j<= i; j++){
             fin.read((char*) &f_buf, size);
             if(i == j) _diag(i) += f_buf * var;
@@ -3326,7 +3345,7 @@ void read_grmAB_oneCPU_forrt(string file, int start, int end, float var){
     float f_buf = 0.0;
     fin.seekg(loc * (long long)size, ios::beg);
     for(int i = start; i< end; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         for(int j = 0; j<= i; j++){
             fin.read((char*) &f_buf, size);
             if(i == j) _diag(i) += f_buf * var;
@@ -3416,7 +3435,7 @@ MappedFile mmap_file(const char *filename) {
     return mapped_file;
   }
 
-  void *mapped_addr = mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
+  void *mapped_addr = mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fd, 0);
 
   close(fd);
 
@@ -3425,6 +3444,7 @@ MappedFile mmap_file(const char *filename) {
     return mapped_file;
   }
 
+  madvise(mapped_addr, filesize, MADV_WILLNEED);
   mapped_file.addr = mapped_addr;
   mapped_file.size = filesize;
 
@@ -3477,6 +3497,7 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
     MatrixXi startend(2, coreNum);
     startend(0, 0) = 0;
     for(i = 1; i< coreNum; i++){
+        // x(x+1)/2 ~= i*unit
         startend(0, i) = floor(sqrt(2 * unit * (long long)i - 0.25) + 0.5);
     }
     startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
@@ -3485,8 +3506,6 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
 
     MappedFile mapped = mmap_file(file.c_str());
     if (!mapped.valid()) return;
-
-    madvise(mapped.addr, mapped.size, MADV_WILLNEED);
 
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
@@ -3567,10 +3586,11 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
     MatrixXf varcmpmat(loopnum, r + 1);
     _check = false;
     for (int loop = 0; loop < loopnum; loop++){
+        PerfTimer perf_timer("calculating iteration " + std::to_string(loop));
+
         _A.setZero(halfn, halfn);
         _B.setZero(halfn, halfn);
         _diag.setZero(n);
-        start = clock();
 
         for (int i = 0; i < r; i++) {
             spdlog::info("Reading the {} GRM for calculating V of iteration {}", getOrdinal(i + 1), loop + 1);
@@ -3641,13 +3661,10 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
         //cout << R1 << endl;
         //cout << R2 << endl;
         //cout << AI << endl;
-        spdlog::info("The variance estimates after iteration {}  are: {}\n", loop + 1, varcmp.transpose());
+        spdlog::info("The variance estimates after iteration {}  are: {}", loop + 1, varcmp.transpose());
         varcmpmat.row(loop) = varcmp.transpose();
-        if(loop == 0){
-            end = clock();
-            spdlog::info("The iteration 1 finished, taking {} seconds.", (double)(end - start) / CLOCKS_PER_SEC);
-        }
-        cout << endl;
+        perf_timer.stop();
+        std::cout << "\n\n";
     }
     cout  << endl << "The variance estimates of each iteration are: " << endl ;
     int col_width = 10;
