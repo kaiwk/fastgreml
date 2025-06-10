@@ -3341,7 +3341,6 @@ void read_grmAB_oneCPU_forrt(string file, int start, int end, float var){
 
 //20240430
 void read_grmAB_forrt_parallel(string file, float var){
-    spdlog::info("path={}", file);
     PerfTimer _perf_timer("read grmAB forrt parallel");
 
     int halfn = (n + 1)/2;
@@ -3426,9 +3425,6 @@ MappedFile mmap_file(const char *filename) {
     return mapped_file;
   }
 
-  madvise(mapped_addr, filesize, MADV_WILLNEED);
-  madvise(mapped_addr, filesize, MADV_SEQUENTIAL);
-
   mapped_file.addr = mapped_addr;
   mapped_file.size = filesize;
 
@@ -3437,14 +3433,12 @@ MappedFile mmap_file(const char *filename) {
 
 void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
     long long loclast;
-    int size = sizeof (float);
     float f_buf = 0.0;
     for(int i = start; i< end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         long long nomiss_i = (long long)(nomissgrmid[i]);
         loclast = nomiss_i * (nomiss_i + 1) / 2;
         float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
-
         for(int j = 0; j<= i; j++){
             f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
@@ -3456,7 +3450,6 @@ void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, f
 void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
     int halfn = (n + 1)/2;
     long long loclast;
-    int size = sizeof (float);
     float f_buf = 0.0;
     for(int i = start; i< end; i++){
         if(i % 10000 == 0) cout << "Reading id:" << i << endl;
@@ -3492,6 +3485,8 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
 
     MappedFile mapped = mmap_file(file.c_str());
     if (!mapped.valid()) return;
+
+    madvise(mapped.addr, mapped.size, MADV_WILLNEED);
 
 #pragma omp parallel for
     for(i = 0; i< coreNum; i++){
