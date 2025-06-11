@@ -1137,8 +1137,10 @@ VectorXf remlesavememory(VectorXf ytemp, int numc, int timemethod){
     return varcmps;
 }
 
-float Rademacher(float dummy){
-    return (runif2(e) > 0) ? 1.0 : -1.0;
+float Rademacher(float dummy) {
+  static default_random_engine engine(std::time(0));
+  static std::uniform_real_distribution<float> uni_dist(-1, 1);
+  return (uni_dist(engine) > 0) ? 1.0 : -1.0;
 }
 
 float calcutrace(float vg, float ve, int timemethod, int numofrt){
@@ -3435,7 +3437,7 @@ MappedFile mmap_file(const char *filename) {
     return mapped_file;
   }
 
-  void *mapped_addr = mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fd, 0);
+  void *mapped_addr = mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
 
   close(fd);
 
@@ -3444,7 +3446,6 @@ MappedFile mmap_file(const char *filename) {
     return mapped_file;
   }
 
-  madvise(mapped_addr, filesize, MADV_WILLNEED);
   mapped_file.addr = mapped_addr;
   mapped_file.size = filesize;
 
@@ -3454,12 +3455,18 @@ MappedFile mmap_file(const char *filename) {
 void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
     long long loclast;
     float f_buf = 0.0;
-    for(int i = start; i< end; i++){
+
+    long long start_index = ((1 + start) * start) / 2;
+    long long end_index = ((1 + end) * end) / 2;
+    float* start_addr = reinterpret_cast<float*>(mapped.addr) + start_index;
+    madvise(start_addr, (end_index - start_index) * sizeof(float), MADV_WILLNEED | MADV_SEQUENTIAL);
+
+    for(int i = start; i < end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         long long nomiss_i = (long long)(nomissgrmid[i]);
         loclast = nomiss_i * (nomiss_i + 1) / 2;
         float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
-        for(int j = 0; j<= i; j++){
+        for(int j = 0; j <= i; j++){
             f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
             else _A(i,j) += f_buf * var;
@@ -3471,12 +3478,18 @@ void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, 
     int halfn = (n + 1)/2;
     long long loclast;
     float f_buf = 0.0;
-    for(int i = start; i< end; i++){
+
+    long long start_index = ((1 + start) * start) / 2;
+    long long end_index = ((1 + end) * end) / 2;
+    float* start_addr = reinterpret_cast<float*>(mapped.addr) + start_index;
+    madvise(start_addr, (end_index - start_index) * sizeof(float), MADV_WILLNEED | MADV_SEQUENTIAL);
+
+    for(int i = start; i < end; i++){
         if(i % 10000 == 0) cout << "Reading id:" << i << endl;
         long long nomiss_i = (long long)(nomissgrmid[i]);
         loclast = nomiss_i * (nomiss_i + 1) / 2;
         float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
-        for(int j = 0; j<= i; j++){
+        for(int j = 0; j <= i; j++){
             f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
             else if(j < halfn) _B(i - halfn,j) += f_buf * var;
@@ -3488,43 +3501,42 @@ void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, 
 /// read_grmAB_forrt_parallel with mmap on Linux
 void read_grmAB_forrt_parallel_v2(string file, float var){
     PerfTimer _perf_timer("read grmAB forrt parallel v2");
-    int halfn = (n + 1)/2;
-    int coreNum = omp_get_num_procs();
-    //cout << "The CPU number is: " << coreNum << endl;
-    int i = 0;
-    long long element = (long long)halfn * (long long)(halfn + 1) / 2;
-    long long unit = element / (long long)coreNum;
-    MatrixXi startend(2, coreNum);
-    startend(0, 0) = 0;
-    for(i = 1; i< coreNum; i++){
-        // x(x+1)/2 ~= i*unit
-        startend(0, i) = floor(sqrt(2 * unit * (long long)i - 0.25) + 0.5);
+    const long long halfn = (n + 1)/2;
+    const int core_num = omp_get_num_procs();
+    long long upper_count = halfn * (halfn + 1) / 2;
+    long long chunk_size = upper_count / core_num;
+    MatrixXi chunk_range(2, core_num);
+    chunk_range(0, 0) = 0;
+
+    for(int i = 1; i < core_num; i++){
+        // x(x+1)/2 ~= i*chunk_size
+        chunk_range(0, i) = floor(sqrt(2 * chunk_size * i - 0.25) + 0.5);
     }
-    startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
-    startend(1, coreNum - 1) = halfn;
-    //cout << startend << endl;
+    chunk_range.row(1).segment(0, core_num - 1) = chunk_range.row(0).segment(1, core_num - 1);
+    chunk_range(1, core_num - 1) = halfn;
 
     MappedFile mapped = mmap_file(file.c_str());
     if (!mapped.valid()) return;
 
-#pragma omp parallel for
-    for(i = 0; i< coreNum; i++){
+    #pragma omp parallel for
+    for(int i = 0; i < core_num; i++){
         //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
-        read_grmA_oneCPU_forrt_withmiss_v2(mapped, startend(0, i), startend(1, i), var);
+        read_grmA_oneCPU_forrt_withmiss_v2(mapped, chunk_range(0, i), chunk_range(1, i), var);
     }
-    long long element2 = (long long)n * (long long)(n + 1) / 2 - element;
-    unit = element2 / (long long) coreNum;
-    startend(0, 0) = halfn;
-    for(i = 1; i< coreNum; i++){
-        startend(0, i) = floor(sqrt(2 * (unit * i + element)  - 0.25) + 0.5);
+
+    long long lower_count = n * (n + 1) / 2 - upper_count;
+    chunk_size = lower_count / core_num;
+    chunk_range(0, 0) = halfn;
+    for(int i = 1; i < core_num; i++){
+        chunk_range(0, i) = floor(sqrt(2 * (chunk_size * i + upper_count)  - 0.25) + 0.5);
     }
-    startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
-    startend(1, coreNum - 1) = n;
-    //cout << startend << endl;
-#pragma omp parallel for
-    for(i = 0; i< coreNum; i++){
+    chunk_range.row(1).segment(0, core_num - 1) = chunk_range.row(0).segment(1, core_num - 1);
+    chunk_range(1, core_num - 1) = n;
+
+    #pragma omp parallel for
+    for(int i = 0; i < core_num; i++){
         //read_grmAB_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
-        read_grmAB_oneCPU_forrt_withmiss_v2(mapped, startend(0, i), startend(1, i), var);
+        read_grmAB_oneCPU_forrt_withmiss_v2(mapped, chunk_range(0, i), chunk_range(1, i), var);
     }
 
     mapped.unmap();
@@ -4000,7 +4012,7 @@ int main(int argc, const char * argv[]) {
               << "init_value_path:" << init_values << '\n'
               << "output_path: " << output_path << "\n\n";
 
-    corenumber = mphe.i;
+    int yid = mphe.i;
 
     VectorXf aaa,bbb,ccc;
     struct rusage usage;
@@ -4037,7 +4049,7 @@ int main(int argc, const char * argv[]) {
     //cout <<  "merge is done, using " << (double)(end - start) / CLOCKS_PER_SEC << "s" << endl;
     //cout <<  n << " indviduals are in common" <<endl;
 
-    VectorXf y = read_phe_search_commonid(mphefile, corenumber);
+    VectorXf y = read_phe_search_commonid(mphefile, yid);
     MatrixXf ymat(n, 1);
     ymat.col(0) = y;
 
@@ -4071,7 +4083,7 @@ int main(int argc, const char * argv[]) {
     //large_remle(grmlist, mhefile, ymat, 29);
     //MatrixXf ab = mremlrandtr_mtraits(ymat, C, 50, 1);
     //cout << "the remltandtr is:"<< endl << ab << endl;
-    large_randtr(mhefile, grmlist, ymat, 50, corenumber);
+    large_randtr(mhefile, grmlist, ymat, 50, yid);
 
     //ymat.col(0) = ymat.col(5);
     //VectorXf rr = mremlrandtr(ymat.col(0), C, 30, 1);
