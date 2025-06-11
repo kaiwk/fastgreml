@@ -45,7 +45,7 @@ using Eigen::Vector2f;
 //int n = 46727, m = 10000;
 //int n = 170985, m = 10000;
 
-int ny, ngrm, n, r;
+long long ny, ngrm, n, r;
 int C = 1;
 int corenumber = 1;
 int stepofconj = 25;
@@ -3452,15 +3452,9 @@ MappedFile mmap_file(const char *filename) {
   return mapped_file;
 }
 
-void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
+void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, long long start, long long end, float var){
     long long loclast;
     float f_buf = 0.0;
-
-    long long start_index = ((1 + start) * start) / 2;
-    long long end_index = ((1 + end) * end) / 2;
-    float* start_addr = reinterpret_cast<float*>(mapped.addr) + start_index;
-    madvise(start_addr, (end_index - start_index) * sizeof(float), MADV_WILLNEED | MADV_SEQUENTIAL);
-
     for(int i = start; i < end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         long long nomiss_i = (long long)(nomissgrmid[i]);
@@ -3474,18 +3468,12 @@ void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, f
     }
 }
 
-void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, int start, int end, float var){
+void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, long long start, long long end, float var){
     int halfn = (n + 1)/2;
     long long loclast;
     float f_buf = 0.0;
-
-    long long start_index = ((1 + start) * start) / 2;
-    long long end_index = ((1 + end) * end) / 2;
-    float* start_addr = reinterpret_cast<float*>(mapped.addr) + start_index;
-    madvise(start_addr, (end_index - start_index) * sizeof(float), MADV_WILLNEED | MADV_SEQUENTIAL);
-
     for(int i = start; i < end; i++){
-        if(i % 10000 == 0) cout << "Reading id:" << i << endl;
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         long long nomiss_i = (long long)(nomissgrmid[i]);
         loclast = nomiss_i * (nomiss_i + 1) / 2;
         float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
