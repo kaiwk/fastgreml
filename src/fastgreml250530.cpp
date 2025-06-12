@@ -2542,14 +2542,18 @@ void read_grmA_oneCPU_withmiss_batch(string file, int start, int end){
     long long loclast;
     ifstream fin( file, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
+
+    std::vector<char> stream_buffer(32 * 1024 * 1024); // 32MB
+    fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
+
     int size = sizeof (float);
     float f_buf = 0.0;
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float), 0);
     for(int i = start; i< end; i++){
         loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
         fin.seekg(loclast * (long long)size, ios::beg);
-        char buffer[size * (nomissgrmid[i] + 1)];
-        fin.read(buffer, size * (nomissgrmid[i] + 1));
-        float* values = reinterpret_cast<float*>(buffer);
+        fin.read(buffer.data(), size * (nomissgrmid[i] + 1));
+        float* values = reinterpret_cast<float*>(buffer.data());
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         for(int j = 0; j<= i; j++){
             f_buf = values[nomissgrmid[j]];
@@ -2571,15 +2575,19 @@ void read_grmAB_oneCPU_withmiss_batch(string file, int start, int end){
     long long loclast;
     ifstream fin( file, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
+
+    std::vector<char> stream_buffer(32 * 1024 * 1024); // 32MB
+    fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
+
     int size = sizeof (float);
     float f_buf = 0.0;
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float), 0);
     for(int i = start; i< end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
         fin.seekg(loclast * (long long)size, ios::beg);
-        char buffer[size * (nomissgrmid[i] + 1)];
-        fin.read(buffer, size * (nomissgrmid[i] + 1));
-        float* values = reinterpret_cast<float*>(buffer);
+        fin.read(buffer.data(), size * (nomissgrmid[i] + 1));
+        float* values = reinterpret_cast<float*>(buffer.data());
         for(int j = 0; j<= i; j++){
             f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) = f_buf;
@@ -2596,15 +2604,19 @@ void read_grmA_oneCPU_forrt_withmiss(string file, int start, int end, float var)
     long long loclast;
     ifstream fin( file, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
+
+    std::vector<char> stream_buffer(32 * 1024 * 1024); // 32MB
+    fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
+
     int size = sizeof (float);
     float f_buf = 0.0;
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float), 0);
     for(int i = start; i< end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
         fin.seekg(loclast * (long long)size, ios::beg);
-        char buffer[size * (nomissgrmid[i] + 1)];
-        fin.read(buffer, size * (nomissgrmid[i] + 1));
-        float* values = reinterpret_cast<float*>(buffer);
+        fin.read(buffer.data(), size * (nomissgrmid[i] + 1));
+        float* values = reinterpret_cast<float*>(buffer.data());
         for(int j = 0; j<= i; j++){
             f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
@@ -2620,15 +2632,19 @@ void read_grmAB_oneCPU_forrt_withmiss(string file, int start, int end, float var
     long long loclast;
     ifstream fin( file, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
+
+    std::vector<char> stream_buffer(32 * 1024 * 1024); // 32MB
+    fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
+
     int size = sizeof (float);
     float f_buf = 0.0;
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float), 0);
     for(int i = start; i< end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
         fin.seekg(loclast * (long long)size, ios::beg);
-        char buffer[size * (nomissgrmid[i] + 1)];
-        fin.read(buffer, size * (nomissgrmid[i] + 1));
-        float* values = reinterpret_cast<float*>(buffer);
+        fin.read(buffer.data(), size * (nomissgrmid[i] + 1));
+        float* values = reinterpret_cast<float*>(buffer.data());
         for(int j = 0; j<= i; j++){
             f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
