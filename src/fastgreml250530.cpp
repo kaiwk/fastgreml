@@ -858,24 +858,22 @@ VectorXf grmABtimesvector(const VectorXf& x){
     int halfn;
     if(n % 2 == 0){
         halfn = n/2;
-        VectorXf y1 = x.head(halfn);
-        VectorXf y2 = x.tail(halfn);
-        VectorXf Vy1 = _A.selfadjointView<Eigen::Lower>() * y1 + _B.transpose() * y2;
-        VectorXf Vy2 = _A.selfadjointView<Eigen::Upper>() * y2 + _B * y1;
+        auto y1 = x.head(halfn);
+        auto y2 = x.tail(halfn);
         VectorXf Vy(n);
-        Vy << Vy1, Vy2;
+        Vy.head(halfn).noalias() = _A.selfadjointView<Eigen::Lower>() * y1 + _B.transpose() * y2;
+        Vy.tail(halfn).noalias() = _A.selfadjointView<Eigen::Upper>() * y2 + _B * y1;
         return Vy + _diag.cwiseProduct(x);
     }
     else{
         halfn = (n + 1)/2;
         VectorXf xpan(n + 1);
         xpan << x, 0;
-        VectorXf y1 = xpan.head(halfn);
-        VectorXf y2 = xpan.tail(halfn);
-        VectorXf Vy1 = _A.selfadjointView<Eigen::Lower>() * y1 + _B.transpose() * y2;
-        VectorXf Vy2 = _A.selfadjointView<Eigen::Upper>() * y2 + _B * y1;
+        auto y1 = xpan.head(halfn);
+        auto y2 = xpan.tail(halfn);
         VectorXf Vy(n + 1);
-        Vy << Vy1, Vy2;
+        Vy.head(halfn).noalias() = _A.selfadjointView<Eigen::Lower>() * y1 + _B.transpose() * y2;
+        Vy.tail(halfn).noalias() = _A.selfadjointView<Eigen::Upper>() * y2 + _B * y1;
         return Vy.head(n) + _diag.cwiseProduct(x);
     }
 
