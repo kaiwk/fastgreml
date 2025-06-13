@@ -45,7 +45,7 @@ using Eigen::Vector2f;
 //int n = 46727, m = 10000;
 //int n = 170985, m = 10000;
 
-long long ny, ngrm, n, r;
+int64_t ny, ngrm, n, r;
 int C = 1;
 int corenumber = 1;
 int stepofconj = 25;
@@ -858,8 +858,8 @@ VectorXf grmABtimesvector(const VectorXf& x){
     int halfn;
     if(n % 2 == 0){
         halfn = n/2;
-        auto y1 = x.head(halfn);
-        auto y2 = x.tail(halfn);
+        const auto& y1 = x.head(halfn);
+        const auto& y2 = x.tail(halfn);
         VectorXf Vy(n);
         Vy.head(halfn).noalias() = _A.selfadjointView<Eigen::Lower>() * y1 + _B.transpose() * y2;
         Vy.tail(halfn).noalias() = _A.selfadjointView<Eigen::Upper>() * y2 + _B * y1;
@@ -869,8 +869,8 @@ VectorXf grmABtimesvector(const VectorXf& x){
         halfn = (n + 1)/2;
         VectorXf xpan(n + 1);
         xpan << x, 0;
-        auto y1 = xpan.head(halfn);
-        auto y2 = xpan.tail(halfn);
+        const auto& y1 = xpan.head(halfn);
+        const auto& y2 = xpan.tail(halfn);
         VectorXf Vy(n + 1);
         Vy.head(halfn).noalias() = _A.selfadjointView<Eigen::Lower>() * y1 + _B.transpose() * y2;
         Vy.tail(halfn).noalias() = _A.selfadjointView<Eigen::Upper>() * y2 + _B * y1;
@@ -959,12 +959,12 @@ VectorXf Hec(VectorXf y, int numc){
 }
 
 VectorXf conjugate(float varcmp, float ve, const VectorXf& x, int timemethod){
-    VectorXf Viy(n), ViViy(n), bb(n), xk(n), rk(n), pk(n),Apk(n);
+    VectorXf Apk(n);
+    const auto& bb = x;
+    VectorXf xk = bb;
+    VectorXf rk = bb - (varcmp * Actimesx(xk,timemethod) + ve * xk) ;
+    VectorXf pk = rk;
     float rkrk, ak, yy, bk = 0.0;
-    bb = x;
-    xk = bb;
-    rk = bb - (varcmp * Actimesx(xk,timemethod) + ve * xk) ;
-    pk = rk;
     yy = bb.dot(bb);
     for(int i = 0; i < stepofconj; i++){
         rkrk = rk.squaredNorm();
@@ -975,7 +975,6 @@ VectorXf conjugate(float varcmp, float ve, const VectorXf& x, int timemethod){
         if(_check){
             cout << "   step" <<  i << ": " << pk.array().abs().sum()*ak <<endl;
         }
-        
         rk -= ak * Apk;
         bk = rk.squaredNorm() / rkrk;
         pk = rk + bk * pk;
@@ -2536,26 +2535,25 @@ void read_grmA_oneCPU_withmiss(string file, int start, int end){
 }
 
 //20240622
-void read_grmA_oneCPU_withmiss_batch(string file, int start, int end){
-    long long loclast;
-    ifstream fin( file, ios::in | ios::binary);
+void read_grmA_oneCPU_withmiss_batch(const string& grm_path, int64_t start, int64_t end) {
+    std::ifstream fin(grm_path, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
 
-    std::vector<char> stream_buffer(32 * 1024 * 1024); // 32MB
+    // Increase internal buffer
+    std::vector<char> stream_buffer(8 * 1024 * 1024);
     fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
 
-    int size = sizeof (float);
-    float f_buf = 0.0;
-    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float), 0);
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
     for(int i = start; i< end; i++){
-        loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
-        fin.seekg(loclast * (long long)size, ios::beg);
-        fin.read(buffer.data(), size * (nomissgrmid[i] + 1));
-        float* values = reinterpret_cast<float*>(buffer.data());
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
-        for(int j = 0; j<= i; j++){
-            f_buf = values[nomissgrmid[j]];
-           // cout << nomissgrmid[i] << endl;
+
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        fin.seekg(offset * sizeof(float), ios::beg);
+        fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
+        float* values = reinterpret_cast<float*>(buffer.data());
+        for(int j = 0; j <= i; j++) {
+            float f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) = f_buf;
             else _A(i,j) = f_buf;
         }
@@ -2568,26 +2566,24 @@ void read_grmA_oneCPU_withmiss_batch(string file, int start, int end){
 
 
 //20240622
-void read_grmAB_oneCPU_withmiss_batch(string file, int start, int end){
-    int halfn = (n + 1)/2;
-    long long loclast;
-    ifstream fin( file, ios::in | ios::binary);
+void read_grmAB_oneCPU_withmiss_batch(const string& file, int64_t start, int64_t end) {
+    int64_t halfn = (n + 1) / 2;
+    std::ifstream fin(file, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
 
-    std::vector<char> stream_buffer(32 * 1024 * 1024); // 32MB
+    std::vector<char> stream_buffer(8 * 1024 * 1024);
     fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
 
-    int size = sizeof (float);
-    float f_buf = 0.0;
-    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float), 0);
-    for(int i = start; i< end; i++){
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
+    for(int i = start; i< end; i++) {
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
-        loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
-        fin.seekg(loclast * (long long)size, ios::beg);
-        fin.read(buffer.data(), size * (nomissgrmid[i] + 1));
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t loclast = nomiss_i * (nomiss_i + 1) / 2;
+        fin.seekg(loclast * sizeof(float), ios::beg);
+        fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
         for(int j = 0; j<= i; j++){
-            f_buf = values[nomissgrmid[j]];
+            float f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) = f_buf;
             else if(j < halfn) _B(i - halfn,j) = f_buf;
             else _A(j - halfn, i - halfn) = f_buf;
@@ -2598,25 +2594,24 @@ void read_grmAB_oneCPU_withmiss_batch(string file, int start, int end){
 
 
 //20240620
-void read_grmA_oneCPU_forrt_withmiss(string file, int start, int end, float var){
-    long long loclast;
-    ifstream fin( file, ios::in | ios::binary);
+void read_grmA_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int64_t end, float var){
+    std::ifstream fin(grm_path, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
 
-    std::vector<char> stream_buffer(32 * 1024 * 1024); // 32MB
+    // Increase internal buffer
+    std::vector<char> stream_buffer(8 * 1024 * 1024);
     fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
 
-    int size = sizeof (float);
-    float f_buf = 0.0;
-    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float), 0);
-    for(int i = start; i< end; i++){
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
+    for(int i = start; i < end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
-        loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
-        fin.seekg(loclast * (long long)size, ios::beg);
-        fin.read(buffer.data(), size * (nomissgrmid[i] + 1));
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        fin.seekg(offset * sizeof(float), ios::beg);
+        fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
-        for(int j = 0; j<= i; j++){
-            f_buf = values[nomissgrmid[j]];
+        for(int j = 0; j <= i; j++){
+            float f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
             else _A(i,j) += f_buf * var;
         }
@@ -2625,26 +2620,25 @@ void read_grmA_oneCPU_forrt_withmiss(string file, int start, int end, float var)
 }
 
 //20240620
-void read_grmAB_oneCPU_forrt_withmiss(string file, int start, int end, float var){
-    int halfn = (n + 1)/2;
-    long long loclast;
-    ifstream fin( file, ios::in | ios::binary);
+void read_grmAB_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int64_t end, float var) {
+    ifstream fin(grm_path, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
 
-    std::vector<char> stream_buffer(32 * 1024 * 1024); // 32MB
+    // Increase internal buffer
+    std::vector<char> stream_buffer(8 * 1024 * 1024);
     fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
 
-    int size = sizeof (float);
-    float f_buf = 0.0;
-    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float), 0);
-    for(int i = start; i< end; i++){
+    int64_t halfn = (n + 1)/2;
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
+    for(int i = start; i < end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
-        loclast = (long long)(nomissgrmid[i]) * (long long)(nomissgrmid[i] + 1) / 2;
-        fin.seekg(loclast * (long long)size, ios::beg);
-        fin.read(buffer.data(), size * (nomissgrmid[i] + 1));
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        fin.seekg(offset * sizeof(float), ios::beg);
+        fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
-        for(int j = 0; j<= i; j++){
-            f_buf = values[nomissgrmid[j]];
+        for(int j = 0; j <= i; j++){
+            float f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
             else if(j < halfn) _B(i - halfn,j) += f_buf * var;
             else _A(j - halfn, i - halfn) += f_buf * var;
@@ -2656,54 +2650,45 @@ void read_grmAB_oneCPU_forrt_withmiss(string file, int start, int end, float var
 
 //20240428 20240623mis
 void read_grmAB_faster_parallel(string file){
-    int halfn = (n + 1)/2;
+    PerfTimer _perf_timer(__FUNCTION__);
+
+    int64_t halfn = (n + 1) / 2;
     _A.setZero(halfn, halfn);
     _B.setZero(halfn, halfn);
     _diag.setZero(n);
-    int coreNum = omp_get_num_procs();
-    //cout << "The CPU number is: " << coreNum << endl;
-    int i = 0;
-    long long element = (long long)halfn * (long long)(halfn + 1) / 2;
-    long long unit = element / (long long)coreNum;
-    MatrixXi startend(2, coreNum);
-    startend(0, 0) = 0;
-    for(i = 1; i< coreNum; i++){
-        startend(0, i) = floor(sqrt(2 * unit * (long long)i - 0.25) + 0.5);
+
+    int chunks = std::max(8, omp_get_num_procs());
+    int64_t upper_count = halfn * (halfn + 1) / 2;
+    int64_t chunk_size = upper_count / chunks;
+    MatrixXi chunk_ranges(2, chunks);
+    chunk_ranges(0, 0) = 0;
+    for(int i = 1; i < chunks; i++) {
+        chunk_ranges(0, i) = floor(sqrt(2 * chunk_size * i - 0.25) + 0.5);
     }
-    startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
-    startend(1, coreNum - 1) = halfn;
+    chunk_ranges.row(1).segment(0, chunks - 1) = chunk_ranges.row(0).segment(1, chunks - 1);
+    chunk_ranges(1, chunks - 1) = halfn;
     
-    //cout << startend << endl;
-    
-#pragma omp parallel for
-    for(i = 0; i< coreNum; i++){
+    #pragma omp parallel for num_threads(chunks)
+    for(int i = 0; i < chunks; i++) {
         //read_grmA_oneCPU(file, startend(0, i), startend(1, i));
         //read_grmA_oneCPU_withmiss(file, startend(0, i), startend(1, i));
-        read_grmA_oneCPU_withmiss_batch(file, startend(0, i), startend(1, i));
+        read_grmA_oneCPU_withmiss_batch(file, chunk_ranges(0, i), chunk_ranges(1, i));
     }
 
-    long long element2 = (long long)n * (long long)(n + 1) / 2 - element;
-    unit = element2 / (long long) coreNum;
-    startend(0, 0) = halfn;
-    long long uniti, unitiele;
-    int sqrtu, flooru;
-    i = 1;
-    //cout << unit * i << endl;
-    //cout << unit * i + element<< endl;
-    //cout << sqrt((unit * i + element)*2) << endl;
-    for(i = 1; i< coreNum; i++){
-        startend(0, i) = floor(sqrt(2 * (unit * i + element)  - 0.25) + 0.5);
+    int64_t lower_count = n * (n + 1) / 2 - upper_count;
+    chunk_size = lower_count / chunks;
+    chunk_ranges(0, 0) = halfn;
+    for(int i = 1; i < chunks; i++) {
+        chunk_ranges(0, i) = floor(sqrt(2 * (chunk_size * i + upper_count)  - 0.25) + 0.5);
     }
-    startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
-    startend(1, coreNum - 1) = n;
+    chunk_ranges.row(1).segment(0, chunks - 1) = chunk_ranges.row(0).segment(1, chunks - 1);
+    chunk_ranges(1, chunks - 1) = n;
     
-    //cout << startend << endl;
-    
-#pragma omp parallel for
-    for(i = 0; i< coreNum; i++){
+    #pragma omp parallel for num_threads(chunks)
+    for(int i = 0; i < chunks; i++) {
         //read_grmAB_oneCPU(file, startend(0, i), startend(1, i));
         //read_grmAB_oneCPU_withmiss(file, startend(0, i), startend(1, i));
-        read_grmAB_oneCPU_withmiss_batch(file, startend(0, i), startend(1, i));
+        read_grmAB_oneCPU_withmiss_batch(file, chunk_ranges(0, i), chunk_ranges(1, i));
     }
     
 }
@@ -3376,40 +3361,43 @@ void read_grmAB_oneCPU_forrt(string file, int start, int end, float var){
 
 //20240430
 void read_grmAB_forrt_parallel(string file, float var){
-    PerfTimer _perf_timer("read grmAB forrt parallel");
+    PerfTimer _perf_timer(__FUNCTION__);
 
-    int halfn = (n + 1)/2;
-    int coreNum = omp_get_num_procs();
-    //cout << "The CPU number is: " << coreNum << endl;
-    int i = 0;
-    long long element = (long long)halfn * (long long)(halfn + 1) / 2;
-    long long unit = element / (long long)coreNum;
-    MatrixXi startend(2, coreNum);
-    startend(0, 0) = 0;
-    for(i = 1; i< coreNum; i++){
-        startend(0, i) = floor(sqrt(2 * unit * (long long)i - 0.25) + 0.5);
+    int64_t halfn = (n + 1) / 2;
+    int chunks = std::max(8, omp_get_num_procs());
+    int64_t upper_count = halfn * (halfn + 1) / 2;
+    int64_t chunk_size = upper_count / chunks;
+    MatrixXi chunk_ranges(2, chunks);
+
+    // Compute grmA chunk range
+    chunk_ranges(0, 0) = 0;
+    for(int i = 1; i < chunks; i++) {
+        chunk_ranges(0, i) = floor(sqrt(2 * chunk_size * i - 0.25) + 0.5);
     }
-    startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
-    startend(1, coreNum - 1) = halfn;
-    //cout << startend << endl;
-#pragma omp parallel for
-    for(i = 0; i< coreNum; i++){
+    chunk_ranges.row(1).segment(0, chunks - 1) = chunk_ranges.row(0).segment(1, chunks - 1);
+    chunk_ranges(1, chunks - 1) = halfn;
+
+    // Read grmA
+    #pragma omp parallel for num_threads(chunks)
+    for(int i = 0; i < chunks; i++){
         //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
-        read_grmA_oneCPU_forrt_withmiss(file, startend(0, i), startend(1, i), var);
+        read_grmA_oneCPU_forrt_withmiss(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
-    long long element2 = (long long)n * (long long)(n + 1) / 2 - element;
-    unit = element2 / (long long) coreNum;
-    startend(0, 0) = halfn;
-    for(i = 1; i< coreNum; i++){
-        startend(0, i) = floor(sqrt(2 * (unit * i + element)  - 0.25) + 0.5);
+
+    // Compute grmAB chunk range
+    int64_t lower_count = n * (n + 1) / 2 - upper_count;
+    chunk_size = lower_count / chunks;
+    chunk_ranges(0, 0) = halfn;
+    for(int i = 1; i < chunks; i++) {
+        chunk_ranges(0, i) = floor(sqrt(2 * (chunk_size * i + upper_count)  - 0.25) + 0.5);
     }
-    startend.row(1).segment(0, coreNum - 1) = startend.row(0).segment(1, coreNum - 1);
-    startend(1, coreNum - 1) = n;
-    //cout << startend << endl;
-#pragma omp parallel for
-    for(i = 0; i< coreNum; i++){
-        //read_grmAB_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
-        read_grmAB_oneCPU_forrt_withmiss(file, startend(0, i), startend(1, i), var);
+    chunk_ranges.row(1).segment(0, chunks - 1) = chunk_ranges.row(0).segment(1, chunks - 1);
+    chunk_ranges(1, chunks - 1) = n;
+
+    // Read grmAB
+    #pragma omp parallel for num_threads(chunks)
+    for(int i = 0; i < chunks; i++) {
+        read_grmAB_oneCPU_forrt_withmiss(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
 }
 
@@ -3600,7 +3588,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
     MatrixXf varcmpmat(loopnum, r + 1);
     _check = false;
     for (int loop = 0; loop < loopnum; loop++){
-        PerfTimer perf_timer("calculating iteration " + std::to_string(loop));
+        PerfTimer perf_timer("calculating iteration " + std::to_string(loop + 1));
 
         _A.setZero(halfn, halfn);
         _B.setZero(halfn, halfn);
@@ -3608,30 +3596,18 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         for (int i = 0; i < r; i++) {
             spdlog::info("Reading the {} GRM for calculating V of iteration {}", getOrdinal(i + 1), loop + 1);
-            read_grmAB_forrt_parallel_v2(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
-            // read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
-            //read_grmAB_forrandtr(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
+            // read_grmAB_forrt_parallel_v2(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
+            read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
 
-        //Viy = conjugate(1.0, varcmp(r), y, 1);
         spdlog::info("calculating Vix of the random vectors");
-#pragma omp parallel for
-        for (int i = 0; i <= numofrt; i++) {
-            //cout << i + 1 << " ";
-            if(i < numofrt)
-               Vix.col(i) = conjugate(1.0, varcmp(r), xs.col(i), 1);
-            else{
-                if(loop == 0) {
-                    //_check = true;
-                    //cout << "\nThe convergence of random vectors:" << endl;
-                }
-                Viy = conjugate(1.0, varcmp(r), y, 1);
-                _check = false;
-            }
-        }
-        //cout << Vix.topLeftCorner(5, 5) << endl;
 
-        //cout << endl;
+        #pragma omp parallel for
+        for (int i = 0; i < numofrt; i++) {
+            Vix.col(i) = conjugate(1.0, varcmp(r), xs.col(i), 1);
+        }
+        Viy = conjugate(1.0, varcmp(r), y, 1);
+
         _singlebin.resize(1);
         _singlebin[0].A = _A;
         _singlebin[0].B = _B;
@@ -3640,24 +3616,25 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
         spdlog::info("Reading GRMs for calculating Aix of iteration {}", loop + 1);
         for (int i = 0; i < r; i++) {  //read second time
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
-            //read_grmAB_faster(grms[i] + ".grm.bin");
             spdlog::info("calculating A{}x of the random vectors", i + 1);
-#pragma omp parallel for
-                for (int j = 0; j < numofrt; j++) {
-                    //cout << j + 1 << " ";
-                    Ax.col(j) = Actimesx(xs.col(j), 1);
-                }
-            //cout << endl;
+
+            #pragma omp parallel for
+            for (int j = 0; j < numofrt; j++) {
+                Ax.col(j) = Actimesx(xs.col(j), 1);
+            }
+
             R1(i) = Ax.cwiseProduct(Vix).sum();
             AViy.col(i) = Actimesx(Viy, 1);
             R2(i) = Viy.dot(AViy.col(i));
         }
         _A = _singlebin[0].A; _B = _singlebin[0].B; _diag = _singlebin[0].diag;
         AViy.col(r) = Viy;
-#pragma omp parallel for
+
+        #pragma omp parallel for
         for (int i = 0; i <= r; i++) {
             ViAViy.col(i) = conjugate(1.0, varcmp(r), AViy.col(i), 1);
         }
+
         R1(r) = xs.cwiseProduct(Vix).sum();
         R2(r) = Viy.dot(Viy) + C / varcmp(r);
 
@@ -3667,14 +3644,9 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
             }
         }
         R1 /= numofrt;
-        //cout << R1.transpose() << endl;
-        //cout << R2.transpose() << endl;
         AId = AI.cast<double>();
         AIi = AId.ldlt().solve(Imatd);
         varcmp -= AIi.cast<float>() * (R1 - R2);
-        //cout << R1 << endl;
-        //cout << R2 << endl;
-        //cout << AI << endl;
         spdlog::info("The variance estimates after iteration {}  are: {}", loop + 1, varcmp.transpose());
         varcmpmat.row(loop) = varcmp.transpose();
         perf_timer.stop();
