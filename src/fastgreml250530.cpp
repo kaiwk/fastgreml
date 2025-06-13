@@ -969,7 +969,7 @@ VectorXf conjugate(float varcmp, float ve, const VectorXf& x, int timemethod){
     for(int i = 0; i < stepofconj; i++){
         rkrk = rk.squaredNorm();
         if((rkrk / yy) < 1e-12) break;
-        Apk.noalias() = (varcmp * Actimesx(pk,timemethod) + ve * pk) ;
+        Apk.noalias() = (varcmp * Actimesx(pk,timemethod) + ve * pk);
         ak = rkrk / Apk.dot(pk);
         xk += ak * pk;
         if(_check){
@@ -2657,7 +2657,7 @@ void read_grmAB_faster_parallel(string file){
     _B.setZero(halfn, halfn);
     _diag.setZero(n);
 
-    int chunks = std::max(8, omp_get_num_procs());
+    int chunks = std::min(16, omp_get_num_procs());
     int64_t upper_count = halfn * (halfn + 1) / 2;
     int64_t chunk_size = upper_count / chunks;
     MatrixXi chunk_ranges(2, chunks);
@@ -3364,7 +3364,7 @@ void read_grmAB_forrt_parallel(string file, float var){
     PerfTimer _perf_timer(__FUNCTION__);
 
     int64_t halfn = (n + 1) / 2;
-    int chunks = std::max(8, omp_get_num_procs());
+    int chunks = std::min(16, omp_get_num_procs());
     int64_t upper_count = halfn * (halfn + 1) / 2;
     int64_t chunk_size = upper_count / chunks;
     MatrixXi chunk_ranges(2, chunks);
