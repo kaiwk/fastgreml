@@ -863,7 +863,7 @@ VectorXf grmABtimesvector(const VectorXf& x){
         VectorXf Vy(n);
         Vy.head(halfn).noalias() = _A.selfadjointView<Eigen::Lower>() * y1 + _B.transpose() * y2;
         Vy.tail(halfn).noalias() = _A.selfadjointView<Eigen::Upper>() * y2 + _B * y1;
-        return Vy + _diag.cwiseProduct(x);
+        return Vy.array() + _diag.array() * x.array();
     }
     else{
         halfn = (n + 1)/2;
@@ -874,7 +874,7 @@ VectorXf grmABtimesvector(const VectorXf& x){
         VectorXf Vy(n + 1);
         Vy.head(halfn).noalias() = _A.selfadjointView<Eigen::Lower>() * y1 + _B.transpose() * y2;
         Vy.tail(halfn).noalias() = _A.selfadjointView<Eigen::Upper>() * y2 + _B * y1;
-        return Vy.head(n) + _diag.cwiseProduct(x);
+        return Vy.head(n).array() + _diag.array() * x.array();
     }
 
 }
