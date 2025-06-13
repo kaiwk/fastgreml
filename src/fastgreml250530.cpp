@@ -3598,7 +3598,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         spdlog::info("calculating Vix of the random vectors");
 
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(12)
         for (int i = 0; i < numofrt; i++) {
             Vix.col(i) = conjugate(1.0, varcmp(r), xs.col(i), 1);
         }
@@ -3614,7 +3614,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
             spdlog::info("calculating A{}x of the random vectors", i + 1);
 
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(12)
             for (int j = 0; j < numofrt; j++) {
                 Ax.col(j) = Actimesx(xs.col(j), 1);
             }
@@ -3626,7 +3626,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
         _A = _singlebin[0].A; _B = _singlebin[0].B; _diag = _singlebin[0].diag;
         AViy.col(r) = Viy;
 
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(12)
         for (int i = 0; i <= r; i++) {
             ViAViy.col(i) = conjugate(1.0, varcmp(r), AViy.col(i), 1);
         }
@@ -3634,7 +3634,6 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
         R1(r) = xs.cwiseProduct(Vix).sum();
         R2(r) = Viy.dot(Viy) + C / varcmp(r);
 
-        #pragma omp parallel for
         for (int i = 0; i < r + 1; i++) {
             for (int j = 0; j <= i; j++) {
                 float value = AViy.col(i).cwiseProduct(ViAViy.col(j)).sum();
