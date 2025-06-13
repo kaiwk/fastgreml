@@ -2582,7 +2582,7 @@ void read_grmAB_oneCPU_withmiss_batch(const string& file, int64_t start, int64_t
         fin.seekg(loclast * sizeof(float), ios::beg);
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
-        for(int j = 0; j<= i; j++){
+        for(int j = 0; j <= i; j++){
             float f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) = f_buf;
             else if(j < halfn) _B(i - halfn,j) = f_buf;
@@ -2610,7 +2610,7 @@ void read_grmA_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int6
         fin.seekg(offset * sizeof(float), ios::beg);
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
-        for(int j = 0; j <= i; j++){
+        for(int j = 0; j <= i; j++) {
             float f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
             else _A(i,j) += f_buf * var;
@@ -2637,7 +2637,7 @@ void read_grmAB_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int
         fin.seekg(offset * sizeof(float), ios::beg);
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
-        for(int j = 0; j <= i; j++){
+        for(int j = 0; j <= i; j++) {
             float f_buf = values[nomissgrmid[j]];
             if(i == j) _diag(i) += f_buf * var;
             else if(j < halfn) _B(i - halfn,j) += f_buf * var;
@@ -3379,7 +3379,7 @@ void read_grmAB_forrt_parallel(string file, float var){
 
     // Read grmA
     #pragma omp parallel for num_threads(chunks)
-    for(int i = 0; i < chunks; i++){
+    for(int i = 0; i < chunks; i++) {
         //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
         read_grmA_oneCPU_forrt_withmiss(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
@@ -3538,36 +3538,32 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
     spdlog::info("The number of random vector is: {}", numofrt);
     vector<string> grms;
     string grmitem;
-    ifstream ifs_grm(grmlist, ios::in);
-    if (!ifs_grm.is_open()) cout << "can not open the file phe\n";
-    while (std::getline(ifs_grm, grmitem)) {
+    std::ifstream fin_grm_list(grmlist, ios::in);
+    if (!fin_grm_list.is_open()) spdlog::error("can not open the file phe");
+    while (std::getline(fin_grm_list, grmitem)) {
         grms.push_back(grmitem);
         spdlog::info("{}", grmitem);
     }
-    ifs_grm.close();
+    fin_grm_list.close();
     r = grms.size();
+
     spdlog::info("These {} GRMs (except the error) are included in the model.", r);
 
-    clock_t start, end;
-    VectorXf y = ymat.col(0); //20240624
+    VectorXf y = ymat.col(0);
     VectorXf varcmp(r + 1);
     VectorXf R1(r + 1), R2(r + 1);
     VectorXf Viy(n), ViViy(n);
     MatrixXf Vix(n, numofrt), Ax(n, numofrt), AI(r + 1, r + 1), AViy(n, r + 1), ViAViy(n, r + 1);
     MatrixXd Imatd = MatrixXd::Identity(r + 1, r + 1), AId, AIi;
     MatrixXf xs = MatrixXf::Zero(n, numofrt).unaryExpr([](float val) { return Rademacher(val); });
-    //MatrixXf xsy(n, numofrt + 1);
-    //xsy.block(0, 0, n, numofrt) = MatrixXf::Zero(n, numofrt).unaryExpr([](float val) { return Rademacher(val); });
-    //xsy.block(0, 0, n, numofrt) = _xs;
-    //xsy.col(numofrt) = y;
 
-    ifstream infile(mhefile, ios::in); //read initial value of varcmp
-    if (!infile.is_open()) cout << "can not open the file phe\n";
-    string line, s;
-    int lineCount = 0;
-    while (getline(infile, line)) {
-        lineCount++;
-        if (lineCount == yid) {
+    std::ifstream fin_mhe(mhefile, ios::in);
+    if (!fin_mhe.is_open()) spdlog::error("can not open the file phe");
+    std::string line, s;
+    int line_count = 0;
+    while (std::getline(fin_mhe, line)) {
+        line_count++;
+        if (line_count == yid) {
             istringstream is(line);
             for (int i = 0; i <= r; i++){
                 is >> s;
@@ -3576,7 +3572,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
             break;
         }
     }
-    infile.close();
+    fin_mhe.close();
     spdlog::info("The initial values are: {}\n", varcmp.transpose());
 
     int halfn = (n + 1) / 2;
@@ -3638,11 +3634,15 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
         R1(r) = xs.cwiseProduct(Vix).sum();
         R2(r) = Viy.dot(Viy) + C / varcmp(r);
 
+        #pragma omp parallel for
         for (int i = 0; i < r + 1; i++) {
             for (int j = 0; j <= i; j++) {
-                AI(i, j) = AI(j, i) = AViy.col(i).cwiseProduct(ViAViy.col(j)).sum();
+                float value = AViy.col(i).cwiseProduct(ViAViy.col(j)).sum();
+                AI(i, j) = value;
+                AI(j, i) = value;
             }
         }
+
         R1 /= numofrt;
         AId = AI.cast<double>();
         AIi = AId.ldlt().solve(Imatd);
