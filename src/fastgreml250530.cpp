@@ -4015,6 +4015,8 @@ int main(int argc, const char * argv[]) {
 
     start = clock();
 
+    std::ifstream fin_grmlist(grmlist);
+    std::getline(fin_grmlist, grmfile);
     read_grmid(grmfile);
     //read_realphe_all(phefile);
 
