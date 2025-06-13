@@ -969,7 +969,7 @@ VectorXf conjugate(float varcmp, float ve, const VectorXf& x, int timemethod){
     for(int i = 0; i < stepofconj; i++){
         rkrk = rk.squaredNorm();
         if((rkrk / yy) < 1e-12) break;
-        Apk = (varcmp * Actimesx(pk,timemethod) + ve * pk) ;
+        Apk.noalias() = (varcmp * Actimesx(pk,timemethod) + ve * pk) ;
         ak = rkrk / Apk.dot(pk);
         xk += ak * pk;
         if(_check){
@@ -3598,7 +3598,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         spdlog::info("calculating Vix of the random vectors");
 
-        #pragma omp parallel for num_threads(12)
+        #pragma omp parallel for
         for (int i = 0; i < numofrt; i++) {
             Vix.col(i) = conjugate(1.0, varcmp(r), xs.col(i), 1);
         }
@@ -3614,7 +3614,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
             spdlog::info("calculating A{}x of the random vectors", i + 1);
 
-            #pragma omp parallel for num_threads(12)
+            #pragma omp parallel for
             for (int j = 0; j < numofrt; j++) {
                 Ax.col(j) = Actimesx(xs.col(j), 1);
             }
@@ -3626,7 +3626,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
         _A = _singlebin[0].A; _B = _singlebin[0].B; _diag = _singlebin[0].diag;
         AViy.col(r) = Viy;
 
-        #pragma omp parallel for num_threads(12)
+        #pragma omp parallel for
         for (int i = 0; i <= r; i++) {
             ViAViy.col(i) = conjugate(1.0, varcmp(r), AViy.col(i), 1);
         }
