@@ -7,3 +7,7 @@ build/
 # editor
 .idea
 .vscode
+
+perf.data
+perf.data.old
+out.perf

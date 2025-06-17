@@ -2,8 +2,8 @@
 
 module load cmake eigen intelmkl
 
-# BUILD_TYPE=RelWithDebInfo
-BUILD_TYPE=Release
+BUILD_TYPE=RelWithDebInfo
+# BUILD_TYPE=Release
 # BUILD_TYPE=Debug
 
 cmake -DBUILD_ON_HPC=ON \
