@@ -909,6 +909,7 @@ VectorXd grmABtimesvectorddd(VectorXd x){
 
 
 VectorXf Actimesx(const VectorXf& x, int cho){
+    PerfTimer _perf_timer(__FUNCTION__);
     if (cho  == 0)
     return proj_x(_grm * proj_x(x));
     else if (cho == 1)
@@ -959,6 +960,8 @@ VectorXf Hec(VectorXf y, int numc){
 }
 
 VectorXf conjugate(float varcmp, float ve, const VectorXf& x, int timemethod){
+    PerfTimer _perf_timer(__FUNCTION__);
+
     VectorXf Apk(n);
     const auto& bb = x;
     VectorXf xk = bb;
@@ -972,9 +975,9 @@ VectorXf conjugate(float varcmp, float ve, const VectorXf& x, int timemethod){
         Apk.noalias() = (varcmp * Actimesx(pk,timemethod) + ve * pk);
         ak = rkrk / Apk.dot(pk);
         xk += ak * pk;
-        if(_check){
-            cout << "   step" <<  i << ": " << pk.array().abs().sum()*ak <<endl;
-        }
+        // if(_check){
+        //     cout << "   step" <<  i << ": " << pk.array().abs().sum()*ak <<endl;
+        // }
         rk -= ak * Apk;
         bk = rk.squaredNorm() / rkrk;
         pk = rk + bk * pk;
@@ -3580,9 +3583,11 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
     _singlebin[0].A.setZero(halfn, halfn);
     _singlebin[0].B.setZero(halfn, halfn);
 
-    int loopnum = 8;
+    int loopnum = 1; // TODO(wangkai) test 1 loop
     MatrixXf varcmpmat(loopnum, r + 1);
     _check = false;
+    const int k_max_threads = omp_get_max_threads();
+    spdlog::info("max openmp threads number is {}", k_max_threads);
     for (int loop = 0; loop < loopnum; loop++){
         PerfTimer perf_timer("calculating iteration " + std::to_string(loop + 1));
 
@@ -3598,23 +3603,25 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         spdlog::info("calculating Vix of the random vectors");
 
-        #pragma omp parallel for
+        #pragma omp parallel for schedule(guided, numofrt / k_max_threads + 2)
         for (int i = 0; i < numofrt; i++) {
             Vix.col(i) = conjugate(1.0, varcmp(r), xs.col(i), 1);
         }
         Viy = conjugate(1.0, varcmp(r), y, 1);
 
+        spdlog::info("!!! Copy A, B, diag start !!!");
         _singlebin.resize(1);
         _singlebin[0].A = _A;
         _singlebin[0].B = _B;
         _singlebin[0].diag = _diag;  //store V
+        spdlog::info("!!! Copy A, B, diag end !!!");
 
         spdlog::info("Reading GRMs for calculating Aix of iteration {}", loop + 1);
         for (int i = 0; i < r; i++) {  //read second time
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
             spdlog::info("calculating A{}x of the random vectors", i + 1);
 
-            #pragma omp parallel for
+            #pragma omp parallel for schedule(guided, numofrt / k_max_threads + 2)
             for (int j = 0; j < numofrt; j++) {
                 Ax.col(j) = Actimesx(xs.col(j), 1);
             }
@@ -3623,10 +3630,15 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
             AViy.col(i) = Actimesx(Viy, 1);
             R2(i) = Viy.dot(AViy.col(i));
         }
-        _A = _singlebin[0].A; _B = _singlebin[0].B; _diag = _singlebin[0].diag;
-        AViy.col(r) = Viy;
 
-        #pragma omp parallel for
+        spdlog::info("!!! Restore A, B, diag start !!!");
+        _A = _singlebin[0].A;
+        _B = _singlebin[0].B;
+        _diag = _singlebin[0].diag;
+        AViy.col(r) = Viy;
+        spdlog::info("!!! Restore A, B, diag start !!!");
+
+        #pragma omp parallel for schedule(guided, r / k_max_threads + 1)
         for (int i = 0; i <= r; i++) {
             ViAViy.col(i) = conjugate(1.0, varcmp(r), AViy.col(i), 1);
         }
