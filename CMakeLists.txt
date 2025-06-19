@@ -97,9 +97,9 @@ if(LINUX)
   target_compile_options(${PROJECT_NAME} PRIVATE -march=native)
   target_link_libraries(${PROJECT_NAME} PRIVATE MKL::MKL)
   # Keep frame pointer for Flamegraph
-  target_compile_options(${PROJECT_NAME} PRIVATE -fno-omit-frame-pointer)
+  # target_compile_options(${PROJECT_NAME} PRIVATE -fno-omit-frame-pointer)
   # set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-omit-frame-pointer")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+  # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
   # Suppress warning
   target_compile_options(${PROJECT_NAME} PRIVATE -fpermissive)
 endif()
