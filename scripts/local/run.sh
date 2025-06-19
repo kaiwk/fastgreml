@@ -7,11 +7,11 @@ LDMS_DATA_PATH=/home/kai/WestlakeProjects/hpc-ldms-data/ldms-data
 # see: https://theartofhpc.com/pcse/omp-affinity.html
 export OMP_NUM_THREADS=20
 export OMP_DISPLAY_ENV=true
-export OMP_PROC_BIND=true       # lock threads to a core
+export OMP_PROC_BIND=close       # keeps threads close together (better L2/L3 sharing, often better for matrix-heavy tasks)
 export OMP_PLACES=cores          # threads bound to a core
 
-export MKL_NUM_THREADS=1
-export MKL_DYNAMIC=false
+# export MKL_NUM_THREADS=1
+# export MKL_DYNAMIC=false
 
 export KMP_AFFINITY=verbose
 

@@ -5,6 +5,14 @@
 #  define EIGEN_USE_MKL_ALL
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#define LIKELY(x)    __builtin_expect(!!(x), 1)
+#define UNLIKELY(x)  __builtin_expect(!!(x), 0)
+#else
+#define LIKELY(x)    (x)
+#define UNLIKELY(x)  (x)
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -88,49 +96,69 @@ bool compare_float(float a, float b, float epsilon = 1e-5f) {
 
 class PerfTimer {
 public:
-    explicit PerfTimer(const std::string& name = "")
-        : name_(name), start_time_(std::chrono::high_resolution_clock::now()), stopped_(false) {}
+  explicit PerfTimer(const std::string &name = "")
+      : name_(name), start_time_(std::chrono::high_resolution_clock::now()),
+        elapsed_time_(start_time_), stopped_(false) {}
 
-    ~PerfTimer() {
-        if (!stopped_) {
-            stop();
-        }
+  ~PerfTimer() {
+    if (!stopped_) {
+      stop();
+    }
+    }
+
+    void elapsed(const std::string& elapsed_name) {
+        if (stopped_) return;  // Avoid double stop
+        auto result = elapsed_to(elapsed_time_);
+        double value = std::get<0>(result);
+        std::string unit = std::get<1>(result);
+        elapsed_time_ = std::get<2>(result);
+        spdlog::info("[perf] ===> elapsed {}, cost {:.3f}{}", elapsed_name, value, unit);
     }
 
     void stop() {
         if (stopped_) return;  // Avoid double stop
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = end_time - start_time_;
-        std::chrono::duration<double, std::milli> milliseconds = duration;
-        std::chrono::duration<double> seconds = duration;
-        std::chrono::duration<double, std::ratio<60>> minutes = duration;
-        std::chrono::duration<double, std::ratio<3600>> hours = duration;
-
-        std::string unit = "ms";
-        double value = milliseconds.count();
-
-        if (milliseconds.count() < 1000.0) {
-          value = milliseconds.count();
-          unit = "ms";
-        } else if (seconds.count() < 60.0) {
-          value = seconds.count();
-          unit = "s";
-        } else if (minutes.count() < 60.0) {
-          value = minutes.count();
-          unit = "min";
-        } else {
-          value = hours.count();
-          unit = "h";
-        }
-
+        auto result = elapsed_to(start_time_);
+        double value = std::get<0>(result);
+        std::string unit = std::get<1>(result);
         spdlog::info("[perf] ===> {}, cost {:.3f}{}", name_, value, unit);
-
         stopped_ = true;
     }
 
 private:
+  std::tuple<double, std::string,
+             std::chrono::high_resolution_clock::time_point>
+  elapsed_to(const std::chrono::high_resolution_clock::time_point &time_point) {
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = end_time - time_point;
+    std::chrono::duration<double, std::milli> milliseconds = duration;
+    std::chrono::duration<double> seconds = duration;
+    std::chrono::duration<double, std::ratio<60>> minutes = duration;
+    std::chrono::duration<double, std::ratio<3600>> hours = duration;
+
+    std::string unit = "ms";
+    double value = milliseconds.count();
+
+    if (milliseconds.count() < 1000.0) {
+      value = milliseconds.count();
+      unit = "ms";
+    } else if (seconds.count() < 60.0) {
+      value = seconds.count();
+      unit = "s";
+    } else if (minutes.count() < 60.0) {
+      value = minutes.count();
+      unit = "min";
+    } else {
+      value = hours.count();
+      unit = "h";
+    }
+
+    return {value, unit, end_time};
+  }
+
+private:
     std::string name_;
-    std::chrono::high_resolution_clock::time_point start_time_;
+    const std::chrono::high_resolution_clock::time_point start_time_;
+    std::chrono::high_resolution_clock::time_point elapsed_time_;
     bool stopped_;
 };
 
@@ -909,7 +937,6 @@ VectorXd grmABtimesvectorddd(VectorXd x){
 
 
 VectorXf Actimesx(const VectorXf& x, int cho){
-    PerfTimer _perf_timer(__FUNCTION__);
     if (cho  == 0)
     return proj_x(_grm * proj_x(x));
     else if (cho == 1)
@@ -960,8 +987,6 @@ VectorXf Hec(VectorXf y, int numc){
 }
 
 VectorXf conjugate(float varcmp, float ve, const VectorXf& x, int timemethod){
-    PerfTimer _perf_timer(__FUNCTION__);
-
     VectorXf Apk(n);
     const auto& bb = x;
     VectorXf xk = bb;
@@ -2511,7 +2536,7 @@ void read_realcov_search_withmiss(string covfile){
 
 
 //20240620
-void read_grmA_oneCPU_withmiss(string file, int start, int end){
+void read_grmA_oneCPU_withmiss(const std::string& file, int start, int end){
     long long loclast = (long long)(nomissgrmid[start]) * (long long)(nomissgrmid[start] + 1) / 2;
     long long locnow, locdif, loctemp;
     ifstream fin( file, ios::in | ios::binary);
@@ -2556,9 +2581,9 @@ void read_grmA_oneCPU_withmiss_batch(const string& grm_path, int64_t start, int6
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
         for(int j = 0; j <= i; j++) {
-            float f_buf = values[nomissgrmid[j]];
-            if(i == j) _diag(i) = f_buf;
-            else _A(i,j) = f_buf;
+            float val = values[nomissgrmid[j]];
+            if(UNLIKELY(i == j)) _diag(i) = val;
+            else _A(i,j) = val;
         }
     }
     fin.close();
@@ -2578,7 +2603,7 @@ void read_grmAB_oneCPU_withmiss_batch(const string& file, int64_t start, int64_t
     fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
 
     std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
-    for(int i = start; i< end; i++) {
+    for(int i = start; i < end; i++) {
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         int64_t nomiss_i = nomissgrmid[i];
         int64_t loclast = nomiss_i * (nomiss_i + 1) / 2;
@@ -2586,10 +2611,10 @@ void read_grmAB_oneCPU_withmiss_batch(const string& file, int64_t start, int64_t
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
         for(int j = 0; j <= i; j++){
-            float f_buf = values[nomissgrmid[j]];
-            if(i == j) _diag(i) = f_buf;
-            else if(j < halfn) _B(i - halfn,j) = f_buf;
-            else _A(j - halfn, i - halfn) = f_buf;
+            float val = values[nomissgrmid[j]];
+            if(UNLIKELY(i == j)) _diag(i) = val;
+            else if(j < halfn) _B(i - halfn,j) = val;
+            else _A(j - halfn, i - halfn) = val;
         }
     }
     fin.close();
@@ -2614,9 +2639,9 @@ void read_grmA_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int6
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
         for(int j = 0; j <= i; j++) {
-            float f_buf = values[nomissgrmid[j]] * var;
-            if(i == j) _diag(i) += f_buf;
-            else _A(i,j) += f_buf;
+            float val = values[nomissgrmid[j]] * var;
+            if(UNLIKELY(i == j)) _diag(i) += val;
+            else _A(i, j) += val;
         }
     }
     fin.close();
@@ -2641,10 +2666,10 @@ void read_grmAB_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
         for(int j = 0; j <= i; j++) {
-            float f_buf = values[nomissgrmid[j]] * var;
-            if(i == j) _diag(i) += f_buf;
-            else if(j < halfn) _B(i - halfn,j) += f_buf;
-            else _A(j - halfn, i - halfn) += f_buf;
+            float val = values[nomissgrmid[j]] * var;
+            if(UNLIKELY(i == j)) _diag(i) += val;
+            else if(j < halfn) _B(i - halfn,j) += val;
+            else _A(j - halfn, i - halfn) += val;
         }
     }
     fin.close();
@@ -2652,7 +2677,7 @@ void read_grmAB_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int
 
 
 //20240428 20240623mis
-void read_grmAB_faster_parallel(string file){
+void read_grmAB_faster_parallel(const std::string& file){
     PerfTimer _perf_timer(__FUNCTION__);
 
     int64_t halfn = (n + 1) / 2;
@@ -3363,7 +3388,7 @@ void read_grmAB_oneCPU_forrt(string file, int start, int end, float var){
 
 
 //20240430
-void read_grmAB_forrt_parallel(string file, float var){
+void read_grmAB_forrt_parallel(const std::string& file, float var){
     PerfTimer _perf_timer(__FUNCTION__);
 
     int64_t halfn = (n + 1) / 2;
@@ -3601,27 +3626,31 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
             read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
 
+        perf_timer.elapsed("read grmAB forrt");
+
         spdlog::info("calculating Vix of the random vectors");
 
-        #pragma omp parallel for 
+        #pragma omp parallel for
         for (int i = 0; i < numofrt; i++) {
             Vix.col(i) = conjugate(1.0, varcmp(r), xs.col(i), 1);
         }
         Viy = conjugate(1.0, varcmp(r), y, 1);
 
-        spdlog::info("!!! Copy A, B, diag start !!!");
+        perf_timer.elapsed("Viy computation");
+
         _singlebin.resize(1);
-        _singlebin[0].A = _A;
-        _singlebin[0].B = _B;
-        _singlebin[0].diag = _diag;  //store V
-        spdlog::info("!!! Copy A, B, diag end !!!");
+        std::swap(_singlebin[0].A, _A);
+        std::swap(_singlebin[0].B, _B);
+        std::swap(_singlebin[0].diag, _diag);  // Backup
+
+        perf_timer.elapsed("backup A and B");
 
         spdlog::info("Reading GRMs for calculating Aix of iteration {}", loop + 1);
         for (int i = 0; i < r; i++) {  //read second time
             read_grmAB_faster_parallel(grms[i] + ".grm.bin");
             spdlog::info("calculating A{}x of the random vectors", i + 1);
 
-            #pragma omp parallel for 
+            #pragma omp parallel for
             for (int j = 0; j < numofrt; j++) {
                 Ax.col(j) = Actimesx(xs.col(j), 1);
             }
@@ -3631,17 +3660,21 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
             R2(i) = Viy.dot(AViy.col(i));
         }
 
-        spdlog::info("!!! Restore A, B, diag start !!!");
-        _A = _singlebin[0].A;
-        _B = _singlebin[0].B;
-        _diag = _singlebin[0].diag;
-        AViy.col(r) = Viy;
-        spdlog::info("!!! Restore A, B, diag start !!!");
+        perf_timer.elapsed("AViy computation");
 
-        #pragma omp parallel for 
+        std::swap(_A, _singlebin[0].A);
+        std::swap(_B, _singlebin[0].B);
+        std::swap(_diag, _singlebin[0].diag); // Restore
+        AViy.col(r) = Viy;
+
+        perf_timer.elapsed("Restore A and B");
+
+        #pragma omp parallel for
         for (int i = 0; i <= r; i++) {
             ViAViy.col(i) = conjugate(1.0, varcmp(r), AViy.col(i), 1);
         }
+
+        perf_timer.elapsed("ViAViy.col(i) computation");
 
         R1(r) = xs.cwiseProduct(Vix).sum();
         R2(r) = Viy.dot(Viy) + C / varcmp(r);
