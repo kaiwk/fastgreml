@@ -16,14 +16,13 @@ export OMP_PLACES=cores          # threads bound to a core
 export KMP_AFFINITY=verbose
 
 sudo -E MIMALLOC_VERBOSE=1 LD_PRELOAD=/usr/lib/libmimalloc.so \
-perf record \
-    -a -g \
+    perf record \
     -e cycles \
     -e sched:sched_switch --switch-events \
     --sample-cpu \
     -m 8M \
     --aio -z \
-    --call-graph dwarf \
+    -g --call-graph dwarf \
 ./build/${BUILD_TYPE}/fastgreml --grmlist "${LDMS_DATA_PATH}/mgrm_nml_noIG_12group.txt" \
     --mphe 1,${LDMS_DATA_PATH}/50.pheno \
     --cov ${LDMS_DATA_PATH}/UKB_All_covariates.covar \

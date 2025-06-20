@@ -2631,14 +2631,14 @@ void read_grmA_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int6
     fin.rdbuf()->pubsetbuf(stream_buffer.data(), stream_buffer.size());
 
     std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
-    for(int i = start; i < end; i++){
+    for (int i = start; i < end; i++) {
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         int64_t nomiss_i = nomissgrmid[i];
         int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
         fin.seekg(offset * sizeof(float), ios::beg);
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
-        for(int j = 0; j <= i; j++) {
+        for (int j = 0; j <= i; j++) {
             float val = values[nomissgrmid[j]] * var;
             if(UNLIKELY(i == j)) _diag(i) += val;
             else _A(i, j) += val;
@@ -2658,14 +2658,14 @@ void read_grmAB_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int
 
     int64_t halfn = (n + 1)/2;
     std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
-    for(int i = start; i < end; i++){
+    for (int i = start; i < end; i++) {
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
         int64_t nomiss_i = nomissgrmid[i];
         int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
         fin.seekg(offset * sizeof(float), ios::beg);
         fin.read(buffer.data(), sizeof(float) * (nomiss_i + 1));
         float* values = reinterpret_cast<float*>(buffer.data());
-        for(int j = 0; j <= i; j++) {
+        for (int j = 0; j <= i; j++) {
             float val = values[nomissgrmid[j]] * var;
             if(UNLIKELY(i == j)) _diag(i) += val;
             else if(j < halfn) _B(i - halfn,j) += val;
@@ -3388,7 +3388,7 @@ void read_grmAB_oneCPU_forrt(string file, int start, int end, float var){
 
 
 //20240430
-void read_grmAB_forrt_parallel(const std::string& file, float var){
+void read_grmAB_forrt_parallel(const std::string& file, float var) {
     PerfTimer _perf_timer(__FUNCTION__);
 
     int64_t halfn = (n + 1) / 2;
@@ -3476,62 +3476,60 @@ MappedFile mmap_file(const char *filename) {
     return mapped_file;
   }
 
+  madvise(mapped_addr, filesize, MADV_SEQUENTIAL | MADV_WILLNEED);
+
   mapped_file.addr = mapped_addr;
   mapped_file.size = filesize;
 
   return mapped_file;
 }
 
-void read_grmA_oneCPU_forrt_withmiss_v2(MappedFile mapped, long long start, long long end, float var){
-    long long loclast;
-    float f_buf = 0.0;
+void read_grmA_oneCPU_forrt_withmiss_mmap(MappedFile mapped, int64_t start, int64_t end, float var) {
     for(int i = start; i < end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
-        long long nomiss_i = (long long)(nomissgrmid[i]);
-        loclast = nomiss_i * (nomiss_i + 1) / 2;
-        float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
-        for(int j = 0; j <= i; j++){
-            f_buf = values[nomissgrmid[j]];
-            if(i == j) _diag(i) += f_buf * var;
-            else _A(i,j) += f_buf * var;
+        int64_t nomiss_i = (int64_t)(nomissgrmid[i]);
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        float* values = reinterpret_cast<float*>(mapped.addr) + offset;
+        for (int j = 0; j <= i; j++) {
+            float val = values[nomissgrmid[j]] * var;
+            if(UNLIKELY(i == j)) _diag(i) += val;
+            else _A(i, j) += val;
         }
     }
 }
 
-void read_grmAB_oneCPU_forrt_withmiss_v2(MappedFile mapped, long long start, long long end, float var){
-    int halfn = (n + 1)/2;
-    long long loclast;
-    float f_buf = 0.0;
+void read_grmAB_oneCPU_forrt_withmiss_mmap(MappedFile mapped, int64_t start, int64_t end, float var){
+    int64_t halfn = (n + 1) / 2;
     for(int i = start; i < end; i++){
         if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
-        long long nomiss_i = (long long)(nomissgrmid[i]);
-        loclast = nomiss_i * (nomiss_i + 1) / 2;
-        float* values = reinterpret_cast<float*>(mapped.addr) + loclast;
-        for(int j = 0; j <= i; j++){
-            f_buf = values[nomissgrmid[j]];
-            if(i == j) _diag(i) += f_buf * var;
-            else if(j < halfn) _B(i - halfn,j) += f_buf * var;
-            else _A(j - halfn, i - halfn) += f_buf * var;
+        int64_t nomiss_i = (int64_t)(nomissgrmid[i]);
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        float* values = reinterpret_cast<float*>(mapped.addr) + offset;
+        for (int j = 0; j <= i; j++) {
+            float val = values[nomissgrmid[j]] * var;
+            if(UNLIKELY(i == j)) _diag(i) += val;
+            else if(j < halfn) _B(i - halfn, j) += val;
+            else _A(j - halfn, i - halfn) += val;
         }
     }
 }
 
 /// read_grmAB_forrt_parallel with mmap on Linux
-void read_grmAB_forrt_parallel_v2(string file, float var){
+void read_grmAB_forrt_parallel_mmap(const string& file, float var){
     PerfTimer _perf_timer("read grmAB forrt parallel v2");
-    const long long halfn = (n + 1)/2;
-    const int core_num = omp_get_num_procs();
-    long long upper_count = halfn * (halfn + 1) / 2;
-    long long chunk_size = upper_count / core_num;
-    MatrixXi chunk_range(2, core_num);
-    chunk_range(0, 0) = 0;
+    const int64_t halfn = (n + 1) / 2;
+    const int64_t core_num = omp_get_num_procs();
+    int64_t upper_count = halfn * (halfn + 1) / 2;
+    int64_t chunk_size = upper_count / core_num;
+    MatrixXi chunk_ranges(2, core_num);
+    chunk_ranges(0, 0) = 0;
 
-    for(int i = 1; i < core_num; i++){
+    for (int i = 1; i < core_num; i++) {
         // x(x+1)/2 ~= i*chunk_size
-        chunk_range(0, i) = floor(sqrt(2 * chunk_size * i - 0.25) + 0.5);
+        chunk_ranges(0, i) = floor(sqrt(2 * chunk_size * i - 0.25) + 0.5);
     }
-    chunk_range.row(1).segment(0, core_num - 1) = chunk_range.row(0).segment(1, core_num - 1);
-    chunk_range(1, core_num - 1) = halfn;
+    chunk_ranges.row(1).segment(0, core_num - 1) = chunk_ranges.row(0).segment(1, core_num - 1);
+    chunk_ranges(1, core_num - 1) = halfn;
 
     MappedFile mapped = mmap_file(file.c_str());
     if (!mapped.valid()) return;
@@ -3539,26 +3537,104 @@ void read_grmAB_forrt_parallel_v2(string file, float var){
     #pragma omp parallel for
     for(int i = 0; i < core_num; i++){
         //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
-        read_grmA_oneCPU_forrt_withmiss_v2(mapped, chunk_range(0, i), chunk_range(1, i), var);
+        read_grmA_oneCPU_forrt_withmiss_mmap(mapped, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
 
-    long long lower_count = n * (n + 1) / 2 - upper_count;
+    int64_t lower_count = n * (n + 1) / 2 - upper_count;
     chunk_size = lower_count / core_num;
-    chunk_range(0, 0) = halfn;
-    for(int i = 1; i < core_num; i++){
-        chunk_range(0, i) = floor(sqrt(2 * (chunk_size * i + upper_count)  - 0.25) + 0.5);
+    chunk_ranges(0, 0) = halfn;
+    for (int i = 1; i < core_num; i++) {
+        chunk_ranges(0, i) = floor(sqrt(2 * (chunk_size * i + upper_count)  - 0.25) + 0.5);
     }
-    chunk_range.row(1).segment(0, core_num - 1) = chunk_range.row(0).segment(1, core_num - 1);
-    chunk_range(1, core_num - 1) = n;
+    chunk_ranges.row(1).segment(0, core_num - 1) = chunk_ranges.row(0).segment(1, core_num - 1);
+    chunk_ranges(1, core_num - 1) = n;
 
     #pragma omp parallel for
     for(int i = 0; i < core_num; i++){
         //read_grmAB_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
-        read_grmAB_oneCPU_forrt_withmiss_v2(mapped, chunk_range(0, i), chunk_range(1, i), var);
+        read_grmAB_oneCPU_forrt_withmiss_mmap(mapped, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
 
     mapped.unmap();
 }
+
+
+void read_grmA_oneCPU_withmiss_mmap(MappedFile mapped, int64_t start, int64_t end) {
+    for(int i = start; i < end; i++){
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        float* values = reinterpret_cast<float*>(mapped.addr) + offset;
+        for(int j = 0; j <= i; j++) {
+            float val = values[nomissgrmid[j]];
+            if(UNLIKELY(i == j)) _diag(i) = val;
+            else _A(i,j) = val;
+        }
+    }
+}
+
+
+void read_grmAB_oneCPU_withmiss_mmap(MappedFile mapped, int64_t start, int64_t end) {
+    int64_t halfn = (n + 1) / 2;
+    for(int i = start; i < end; i++) {
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        float* values = reinterpret_cast<float*>(mapped.addr) + offset;
+        for(int j = 0; j <= i; j++){
+            float val = values[nomissgrmid[j]];
+            if(UNLIKELY(i == j)) _diag(i) = val;
+            else if(j < halfn) _B(i - halfn,j) = val;
+            else _A(j - halfn, i - halfn) = val;
+        }
+    }
+}
+
+void read_grmAB_faster_parallel_mmap(const std::string& file) {
+    PerfTimer _perf_timer(__FUNCTION__);
+
+    int64_t halfn = (n + 1) / 2;
+    _A.setZero(halfn, halfn);
+    _B.setZero(halfn, halfn);
+    _diag.setZero(n);
+
+    int chunks = std::min(16, omp_get_num_procs());
+    int64_t upper_count = halfn * (halfn + 1) / 2;
+    int64_t chunk_size = upper_count / chunks;
+    MatrixXi chunk_ranges(2, chunks);
+    chunk_ranges(0, 0) = 0;
+    for (int i = 1; i < chunks; i++) {
+        chunk_ranges(0, i) = floor(sqrt(2 * chunk_size * i - 0.25) + 0.5);
+    }
+    chunk_ranges.row(1).segment(0, chunks - 1) = chunk_ranges.row(0).segment(1, chunks - 1);
+    chunk_ranges(1, chunks - 1) = halfn;
+
+    MappedFile mapped = mmap_file(file.c_str());
+    if (!mapped.valid()) return;
+
+    #pragma omp parallel for num_threads(chunks)
+    for (int i = 0; i < chunks; i++) {
+        read_grmA_oneCPU_withmiss_mmap(mapped, chunk_ranges(0, i), chunk_ranges(1, i));
+    }
+
+    int64_t lower_count = n * (n + 1) / 2 - upper_count;
+    chunk_size = lower_count / chunks;
+    chunk_ranges(0, 0) = halfn;
+    for (int i = 1; i < chunks; i++) {
+        chunk_ranges(0, i) = floor(sqrt(2 * (chunk_size * i + upper_count)  - 0.25) + 0.5);
+    }
+    chunk_ranges.row(1).segment(0, chunks - 1) = chunk_ranges.row(0).segment(1, chunks - 1);
+    chunk_ranges(1, chunks - 1) = n;
+
+    #pragma omp parallel for num_threads(chunks)
+    for (int i = 0; i < chunks; i++) {
+        read_grmAB_oneCPU_withmiss_mmap(mapped, chunk_ranges(0, i), chunk_ranges(1, i));
+    }
+
+    mapped.unmap();
+}
+
+
 
 
 //20240409 20240430change 20240520 20250530
@@ -3611,9 +3687,10 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
     int loopnum = 1; // TODO(wangkai) test 1 loop
     MatrixXf varcmpmat(loopnum, r + 1);
     _check = false;
-    const int k_max_threads = omp_get_max_threads();
-    spdlog::info("max openmp threads number is {}", k_max_threads);
-    for (int loop = 0; loop < loopnum; loop++){
+    const int k_omp_threads = omp_get_max_threads();
+    spdlog::info("max openmp threads number is {}", k_omp_threads);
+    spdlog::info("mkl threads number is {}, eigen threads number is {}", mkl_get_max_threads(), Eigen::nbThreads());
+    for (int loop = 0; loop < loopnum; loop++) {
         PerfTimer perf_timer("calculating iteration " + std::to_string(loop + 1));
 
         _A.setZero(halfn, halfn);
@@ -3622,8 +3699,8 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         for (int i = 0; i < r; i++) {
             spdlog::info("Reading the {} GRM for calculating V of iteration {}", getOrdinal(i + 1), loop + 1);
-            // read_grmAB_forrt_parallel_v2(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
-            read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
+            read_grmAB_forrt_parallel_mmap(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
+            // read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
 
         perf_timer.elapsed("read grmAB forrt");
@@ -3647,7 +3724,8 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         spdlog::info("Reading GRMs for calculating Aix of iteration {}", loop + 1);
         for (int i = 0; i < r; i++) {  //read second time
-            read_grmAB_faster_parallel(grms[i] + ".grm.bin");
+            // read_grmAB_faster_parallel(grms[i] + ".grm.bin");
+            read_grmAB_faster_parallel_mmap(grms[i] + ".grm.bin");
             spdlog::info("calculating A{}x of the random vectors", i + 1);
 
             #pragma omp parallel for
