@@ -3536,7 +3536,6 @@ void read_grmAB_forrt_parallel_mmap(const string& file, float var){
 
     #pragma omp parallel for
     for(int i = 0; i < core_num; i++){
-        //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
         read_grmA_oneCPU_forrt_withmiss_mmap(mapped, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
 
@@ -3551,7 +3550,6 @@ void read_grmAB_forrt_parallel_mmap(const string& file, float var){
 
     #pragma omp parallel for
     for(int i = 0; i < core_num; i++){
-        //read_grmAB_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
         read_grmAB_oneCPU_forrt_withmiss_mmap(mapped, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
 
@@ -3568,7 +3566,7 @@ void read_grmA_oneCPU_withmiss_mmap(MappedFile mapped, int64_t start, int64_t en
         for(int j = 0; j <= i; j++) {
             float val = values[nomissgrmid[j]];
             if(UNLIKELY(i == j)) _diag(i) = val;
-            else _A(i,j) = val;
+            else _A(i, j) = val;
         }
     }
 }
@@ -3584,7 +3582,7 @@ void read_grmAB_oneCPU_withmiss_mmap(MappedFile mapped, int64_t start, int64_t e
         for(int j = 0; j <= i; j++){
             float val = values[nomissgrmid[j]];
             if(UNLIKELY(i == j)) _diag(i) = val;
-            else if(j < halfn) _B(i - halfn,j) = val;
+            else if(j < halfn) _B(i - halfn, j) = val;
             else _A(j - halfn, i - halfn) = val;
         }
     }
@@ -3707,7 +3705,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         spdlog::info("calculating Vix of the random vectors");
 
-        #pragma omp parallel for
+        #pragma omp parallel for schedule(dynamic)
         for (int i = 0; i < numofrt; i++) {
             Vix.col(i) = conjugate(1.0, varcmp(r), xs.col(i), 1);
         }
@@ -3728,7 +3726,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
             read_grmAB_faster_parallel_mmap(grms[i] + ".grm.bin");
             spdlog::info("calculating A{}x of the random vectors", i + 1);
 
-            #pragma omp parallel for
+            #pragma omp parallel for schedule(dynamic)
             for (int j = 0; j < numofrt; j++) {
                 Ax.col(j) = Actimesx(xs.col(j), 1);
             }
@@ -3747,7 +3745,7 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         perf_timer.elapsed("Restore A and B");
 
-        #pragma omp parallel for
+        #pragma omp parallel for schedule(dynamic)
         for (int i = 0; i <= r; i++) {
             ViAViy.col(i) = conjugate(1.0, varcmp(r), AViy.col(i), 1);
         }
