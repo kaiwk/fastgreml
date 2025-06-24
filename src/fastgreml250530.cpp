@@ -3697,8 +3697,8 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         for (int i = 0; i < r; i++) {
             spdlog::info("Reading the {} GRM for calculating V of iteration {}", getOrdinal(i + 1), loop + 1);
-            read_grmAB_forrt_parallel_mmap(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
-            // read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
+            // read_grmAB_forrt_parallel_mmap(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
+            read_grmAB_forrt_parallel(grms[i] + ".grm.bin", varcmp(i)); //read first time to calculate V
         }
 
         perf_timer.elapsed("read grmAB forrt");
@@ -3722,8 +3722,8 @@ void large_randtr(const std::string& mhefile, const std::string& grmlist, const 
 
         spdlog::info("Reading GRMs for calculating Aix of iteration {}", loop + 1);
         for (int i = 0; i < r; i++) {  //read second time
-            // read_grmAB_faster_parallel(grms[i] + ".grm.bin");
-            read_grmAB_faster_parallel_mmap(grms[i] + ".grm.bin");
+            read_grmAB_faster_parallel(grms[i] + ".grm.bin");
+            // read_grmAB_faster_parallel_mmap(grms[i] + ".grm.bin");
             spdlog::info("calculating A{}x of the random vectors", i + 1);
 
             #pragma omp parallel for schedule(dynamic)
