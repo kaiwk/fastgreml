@@ -15,7 +15,14 @@ export OMP_PLACES=cores          # threads bound to a core
 
 export KMP_AFFINITY=verbose
 
-sudo -E MIMALLOC_VERBOSE=1 LD_PRELOAD=/usr/lib/libmimalloc.so \
+export MIMALLOC_VERBOSE=1
+export MIMALLOC_SHOW_STATS=1
+export MIMALLOC_EAGER_COMMIT=1
+export MIMALLOC_ALLOW_LARGE_OS_PAGES=1
+export MIMALLOC_RESERVE_HUGE_OS_PAGES=1
+export MIMALLOC_PURGE_DECOMMITS=0  # keep memory hot
+
+sudo -E LD_PRELOAD=/usr/lib/libmimalloc.so \
     perf record \
     -e cycles \
     -e sched:sched_switch --switch-events \
@@ -23,7 +30,7 @@ sudo -E MIMALLOC_VERBOSE=1 LD_PRELOAD=/usr/lib/libmimalloc.so \
     -m 8M \
     --aio -z \
     -g --call-graph dwarf \
-./build/${BUILD_TYPE}/fastgreml --grmlist "${LDMS_DATA_PATH}/mgrm_nml_noIG_12group.txt" \
+    ./build/${BUILD_TYPE}/fastgreml --grmlist "${LDMS_DATA_PATH}/mgrm_nml_noIG_12group.txt" \
     --mphe 1,${LDMS_DATA_PATH}/50.pheno \
     --cov ${LDMS_DATA_PATH}/UKB_All_covariates.covar \
     --initial ${LDMS_DATA_PATH}/fastgreml_init_vals.txt \

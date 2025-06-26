@@ -29,17 +29,15 @@ export OMP_PLACES=cores          # threads bound to a core
 export KMP_AFFINITY=verbose
 
 LD_PRELOAD="/storage/yangjianLab/wangkai/Repo/mimalloc/out/Release/libmimalloc.so"  \
-MIMALLOC_VERBOSE=1 \
-# perf record \
-#     -g \
-#     -e cycles \
-#     --sample-cpu \
-#     -m 8M \
-#     --aio \
-#     --call-graph dwarf \
-./build/${BUILD_TYPE}/fastgreml \
---grmlist /storage/yangjianLab/xuting/data/genotype/WES_350k/mgrm_ldms_g8.txt  \
---mphe 1,/storage/yangjianLab/xuting/data/genotype/300k/nm96_349660.txt \
---cov /storage/yangjianLab/xuting/ukb/UKB_All_covariates.covar \
---initial /storage/yangjianLab/xuting/data/genotype/WES_350k/mhe_ldms_g8_nm96_change.txt \
---output /storage/yangjianLab/wangkai/fastgreml_output.txt
+    MIMALLOC_VERBOSE=1 \
+    MIMALLOC_SHOW_STATS=1 \
+    MIMALLOC_EAGER_COMMIT=1 \
+    MIMALLOC_ALLOW_LARGE_OS_PAGES=1 \
+    MIMALLOC_RESERVE_HUGE_OS_PAGES=1 \
+    MIMALLOC_PURGE_DECOMMITS=0 \
+    ./build/${BUILD_TYPE}/fastgreml \
+    --grmlist /storage/yangjianLab/xuting/data/genotype/WES_350k/mgrm_ldms_g8.txt  \
+    --mphe 1,/storage/yangjianLab/xuting/data/genotype/300k/nm96_349660.txt \
+    --cov /storage/yangjianLab/xuting/ukb/UKB_All_covariates.covar \
+    --initial /storage/yangjianLab/xuting/data/genotype/WES_350k/mhe_ldms_g8_nm96_change.txt \
+    --output /storage/yangjianLab/wangkai/fastgreml_output.txt
