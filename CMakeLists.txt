@@ -48,17 +48,16 @@ if(APPLE)
   set(OpenMP_CXX_LIB_NAMES "omp")
   set(OpenMP_CXX_INCLUDE_DIR "/opt/homebrew/opt/libomp/include")
   set(OpenMP_omp_LIBRARY "/opt/homebrew/opt/libomp/lib/libomp.dylib")
-  find_package(OpenMP REQUIRED)
 endif()
 
 if(LINUX AND NOT BUILD_ON_HPC)
   set(OMP_LIBRARY "/usr/lib/libgomp.so")
   set(MKL_DIR "/opt/intel/mkl/lib/intel64/cmake/mkl")
   set(MKL_THREADING "gnu_thread")
+  find_package(MKL REQUIRED)
 endif()
 
 find_package(OpenMP REQUIRED)
-find_package(MKL REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 FetchContent_Declare(args

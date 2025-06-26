@@ -109,24 +109,21 @@ public:
     void elapsed(const std::string& elapsed_name) {
         if (stopped_) return;  // Avoid double stop
         auto result = elapsed_to(elapsed_time_);
-        double value = std::get<0>(result);
-        std::string unit = std::get<1>(result);
-        elapsed_time_ = std::get<2>(result);
-        spdlog::info("[perf] ===> elapsed {}, cost {:.3f}{}", elapsed_name, value, unit);
+        std::string time_str = result.first;
+        elapsed_time_ = result.second;
+        spdlog::info("[perf] ===> elapsed {}, cost {}", elapsed_name, time_str);
     }
 
     void stop() {
         if (stopped_) return;  // Avoid double stop
         auto result = elapsed_to(start_time_);
-        double value = std::get<0>(result);
-        std::string unit = std::get<1>(result);
-        spdlog::info("[perf] ===> {}, cost {:.3f}{}", name_, value, unit);
+        std::string time_str = result.first;
+        spdlog::info("[perf] ===> {}, cost {}", name_, time_str);
         stopped_ = true;
     }
 
 private:
-  std::tuple<double, std::string,
-             std::chrono::high_resolution_clock::time_point>
+  std::pair<std::string, std::chrono::high_resolution_clock::time_point>
   elapsed_to(const std::chrono::high_resolution_clock::time_point &time_point) {
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = end_time - time_point;
@@ -135,24 +132,23 @@ private:
     std::chrono::duration<double, std::ratio<60>> minutes = duration;
     std::chrono::duration<double, std::ratio<3600>> hours = duration;
 
-    std::string unit = "ms";
-    double value = milliseconds.count();
-
+    std::string time_str;
     if (milliseconds.count() < 1000.0) {
-      value = milliseconds.count();
-      unit = "ms";
+      time_str = fmt::format("{}ms", milliseconds.count());
     } else if (seconds.count() < 60.0) {
-      value = seconds.count();
-      unit = "s";
-    } else if (minutes.count() < 60.0) {
-      value = minutes.count();
-      unit = "min";
+      time_str = fmt::format("{:02}:{:02}:{:02.3f}s", 0, 0, seconds.count());
+    } else if (minutes.count() < 60) {
+      auto min = std::trunc(minutes.count());
+      auto sec = seconds.count() - 60.0 * min;
+      time_str = fmt::format("{:02}:{:02}:{:02.3f}s", 0, min, sec);
     } else {
-      value = hours.count();
-      unit = "h";
+      auto h = std::trunc(hours.count());
+      auto min = minutes.count() - 60 * h;
+      auto sec = seconds.count() - (60 * (min + 60 * h));
+      time_str = fmt::format("{:02}:{:02}:{:02.3f}s", h, min, sec);
     }
 
-    return {value, unit, end_time};
+    return {time_str, end_time};
   }
 
 private:
