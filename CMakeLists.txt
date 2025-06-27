@@ -72,11 +72,13 @@ FetchContent_GetProperties(args)
 FetchContent_MakeAvailable(args)
 
 # Source
-file(GLOB_RECURSE SOURCES src/*.cpp src/*.cc src/*.h src/*.hpp)
+file(GLOB_RECURSE SOURCES src/*.cpp src/*.cc)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_11)
+
+target_include_directories(${PROJECT_NAME} PRIVATE src)
 
 if(APPLE)
   if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
