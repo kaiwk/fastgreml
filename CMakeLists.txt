@@ -54,11 +54,11 @@ if(LINUX AND NOT BUILD_ON_HPC)
   set(OMP_LIBRARY "/usr/lib/libgomp.so")
   set(MKL_DIR "/opt/intel/mkl/lib/intel64/cmake/mkl")
   set(MKL_THREADING "gnu_thread")
-  find_package(MKL REQUIRED)
 endif()
 
 find_package(OpenMP REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(MKL REQUIRED)
 
 FetchContent_Declare(args
   GIT_REPOSITORY https://github.com/Taywee/args.git
