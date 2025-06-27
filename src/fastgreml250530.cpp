@@ -26,6 +26,8 @@
 #include <ctime>
 #include <vector>
 
+#include <fcntl.h>
+
 #include <omp.h>
 #include <Eigen/Eigen>
 #include <args.hxx>
@@ -2586,9 +2588,6 @@ void read_grmA_oneCPU_withmiss_batch(const string& grm_path, int64_t start, int6
 }
 
 
-
-
-
 //20240622
 void read_grmAB_oneCPU_withmiss_batch(const string& file, int64_t start, int64_t end) {
     int64_t halfn = (n + 1) / 2;
@@ -2617,8 +2616,87 @@ void read_grmAB_oneCPU_withmiss_batch(const string& file, int64_t start, int64_t
 }
 
 
+//20240622
+void read_grmA_oneCPU_withmiss_batch_posix(const string& grm_path, int64_t start, int64_t end) {
+    int fd = open(grm_path.c_str(), O_RDONLY);
+    if (fd == -1) {
+      perror("can not open the file\n");
+      return;
+    }
+
+    int64_t nomiss_start = nomissgrmid[start];
+    int64_t offset_start = nomiss_start * (nomiss_start + 1) / 2;
+
+    int64_t nomiss_end = nomissgrmid[end - 1];
+    int64_t offset_end = nomiss_end * (nomiss_end + 1) / 2 + (nomiss_end + 1);
+
+    int64_t len = offset_end - offset_start;
+
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_NOREUSE);
+
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
+    for(int i = start; i< end; i++){
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
+
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        pread(fd, buffer.data(), sizeof(float) * (nomiss_i + 1), offset * sizeof(float));
+        float* values = reinterpret_cast<float*>(buffer.data());
+        for(int j = 0; j <= i; j++) {
+            float val = values[nomissgrmid[j]];
+            if(UNLIKELY(i == j)) _diag(i) = val;
+            else _A(i,j) = val;
+        }
+    }
+
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_DONTNEED);
+    close(fd);
+}
+
+
+//20240622
+void read_grmAB_oneCPU_withmiss_batch_posix(const string& grm_path, int64_t start, int64_t end) {
+    int fd = open(grm_path.c_str(), O_RDONLY);
+    if (fd == -1) {
+      perror("can not open the file\n");
+      return;
+    }
+
+    int64_t nomiss_start = nomissgrmid[start];
+    int64_t offset_start = nomiss_start * (nomiss_start + 1) / 2;
+
+    int64_t nomiss_end = nomissgrmid[end - 1];
+    int64_t offset_end = nomiss_end * (nomiss_end + 1) / 2 + (nomiss_end + 1);
+
+    int64_t len = offset_end - offset_start;
+
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_NOREUSE);
+
+    int64_t halfn = (n + 1) / 2;
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
+    for(int i = start; i < end; i++) {
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        pread(fd, buffer.data(), sizeof(float) * (nomiss_i + 1), offset * sizeof(float));
+        float* values = reinterpret_cast<float*>(buffer.data());
+        for(int j = 0; j <= i; j++){
+            float val = values[nomissgrmid[j]];
+            if(UNLIKELY(i == j)) _diag(i) = val;
+            else if(j < halfn) _B(i - halfn,j) = val;
+            else _A(j - halfn, i - halfn) = val;
+        }
+    }
+
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_DONTNEED);
+    close(fd);
+}
+
+
 //20240620
-void read_grmA_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int64_t end, float var){
+void read_grmA_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int64_t end, float var) {
     std::ifstream fin(grm_path, ios::in | ios::binary);
     if (!fin.is_open()) cout << "can not open the file\n";
 
@@ -2672,6 +2750,83 @@ void read_grmAB_oneCPU_forrt_withmiss(const string& grm_path, int64_t start, int
 }
 
 
+//20240620
+void read_grmA_oneCPU_forrt_withmiss_posix(const string& grm_path, int64_t start, int64_t end, float var) {
+    int fd = open(grm_path.c_str(), O_RDONLY);
+    if (fd == -1) {
+      perror("can not open the file\n");
+      return;
+    }
+
+    int64_t nomiss_start = nomissgrmid[start];
+    int64_t offset_start = nomiss_start * (nomiss_start + 1) / 2;
+
+    int64_t nomiss_end = nomissgrmid[end - 1];
+    int64_t offset_end = nomiss_end * (nomiss_end + 1) / 2 + (nomiss_end + 1);
+
+    int64_t len = offset_end - offset_start;
+
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_NOREUSE);
+
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
+    for (int i = start; i < end; i++) {
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        pread(fd, buffer.data(), sizeof(float) * (nomiss_i + 1), offset * sizeof(float));
+        float* values = reinterpret_cast<float*>(buffer.data());
+        for (int j = 0; j <= i; j++) {
+            float val = values[nomissgrmid[j]] * var;
+            if(UNLIKELY(i == j)) _diag(i) += val;
+            else _A(i, j) += val;
+        }
+    }
+
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_DONTNEED);
+    close(fd);
+}
+
+//20240620
+void read_grmAB_oneCPU_forrt_withmiss_posix(const string& grm_path, int64_t start, int64_t end, float var) {
+    int fd = open(grm_path.c_str(), O_RDONLY);
+    if (fd == -1) {
+      perror("can not open the file\n");
+      return;
+    }
+
+    int64_t nomiss_start = nomissgrmid[start];
+    int64_t offset_start = nomiss_start * (nomiss_start + 1) / 2;
+
+    int64_t nomiss_end = nomissgrmid[end - 1];
+    int64_t offset_end = nomiss_end * (nomiss_end + 1) / 2 + (nomiss_end + 1);
+
+    int64_t len = offset_end - offset_start;
+
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_NOREUSE);
+
+    int64_t halfn = (n + 1)/2;
+    std::vector<char> buffer((nomissgrmid[end - 1] + 1) * sizeof(float));
+    for (int i = start; i < end; i++) {
+        if(i % 10000 == 0) spdlog::info("Reading id: {}", i);
+        int64_t nomiss_i = nomissgrmid[i];
+        int64_t offset = nomiss_i * (nomiss_i + 1) / 2;
+        pread(fd, buffer.data(), sizeof(float) * (nomiss_i + 1), offset * sizeof(float));
+        float* values = reinterpret_cast<float*>(buffer.data());
+        for (int j = 0; j <= i; j++) {
+            float val = values[nomissgrmid[j]] * var;
+            if(UNLIKELY(i == j)) _diag(i) += val;
+            else if(j < halfn) _B(i - halfn, j) += val;
+            else _A(j - halfn, i - halfn) += val;
+        }
+    }
+
+    posix_fadvise(fd, nomiss_start, len, POSIX_FADV_DONTNEED);
+    close(fd);
+}
+
+
 //20240428 20240623mis
 void read_grmAB_faster_parallel(const std::string& file){
     PerfTimer _perf_timer(__FUNCTION__);
@@ -2696,7 +2851,8 @@ void read_grmAB_faster_parallel(const std::string& file){
     for(int i = 0; i < chunks; i++) {
         //read_grmA_oneCPU(file, startend(0, i), startend(1, i));
         //read_grmA_oneCPU_withmiss(file, startend(0, i), startend(1, i));
-        read_grmA_oneCPU_withmiss_batch(file, chunk_ranges(0, i), chunk_ranges(1, i));
+        // read_grmA_oneCPU_withmiss_batch(file, chunk_ranges(0, i), chunk_ranges(1, i));
+        read_grmA_oneCPU_withmiss_batch_posix(file, chunk_ranges(0, i), chunk_ranges(1, i));
     }
 
     int64_t lower_count = n * (n + 1) / 2 - upper_count;
@@ -2712,7 +2868,8 @@ void read_grmAB_faster_parallel(const std::string& file){
     for(int i = 0; i < chunks; i++) {
         //read_grmAB_oneCPU(file, startend(0, i), startend(1, i));
         //read_grmAB_oneCPU_withmiss(file, startend(0, i), startend(1, i));
-        read_grmAB_oneCPU_withmiss_batch(file, chunk_ranges(0, i), chunk_ranges(1, i));
+        // read_grmAB_oneCPU_withmiss_batch(file, chunk_ranges(0, i), chunk_ranges(1, i));
+        read_grmAB_oneCPU_withmiss_batch_posix(file, chunk_ranges(0, i), chunk_ranges(1, i));
     }
     
 }
@@ -3404,8 +3561,8 @@ void read_grmAB_forrt_parallel(const std::string& file, float var) {
     // Read grmA
     #pragma omp parallel for num_threads(chunks)
     for(int i = 0; i < chunks; i++) {
-        //read_grmA_oneCPU_forrt(file, startend(0, i), startend(1, i), var);
-        read_grmA_oneCPU_forrt_withmiss(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
+        // read_grmA_oneCPU_forrt_withmiss(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
+        read_grmA_oneCPU_forrt_withmiss_posix(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
 
     // Compute grmAB chunk range
@@ -3421,7 +3578,8 @@ void read_grmAB_forrt_parallel(const std::string& file, float var) {
     // Read grmAB
     #pragma omp parallel for num_threads(chunks)
     for(int i = 0; i < chunks; i++) {
-        read_grmAB_oneCPU_forrt_withmiss(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
+        // read_grmAB_oneCPU_forrt_withmiss(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
+        read_grmAB_oneCPU_forrt_withmiss_posix(file, chunk_ranges(0, i), chunk_ranges(1, i), var);
     }
 }
 

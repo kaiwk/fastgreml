@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 
 BUILD_TYPE=RelWithDebInfo
+# BUILD_TYPE=Release
 
 LDMS_DATA_PATH=/home/kai/WestlakeProjects/hpc-ldms-data/ldms-data
 
