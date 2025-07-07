@@ -20,23 +20,11 @@ include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 set(FETCHCONTENT_QUIET OFF)
 
-if(NOT BUILD_ON_HPC)
-  FetchContent_Declare(
-    eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.0
-    GIT_SHALLOW TRUE
-  )
-  FetchContent_MakeAvailable(Eigen)
-endif()
-
 # Fetch spdlog
 FetchContent_Declare(
   spdlog
   GIT_REPOSITORY https://github.com/gabime/spdlog.git
   GIT_TAG v1.15.3)
-
-FetchContent_MakeAvailable(spdlog)
 
 # Find OpenMP
 if(APPLE)
@@ -50,15 +38,28 @@ if(APPLE)
   set(OpenMP_omp_LIBRARY "/opt/homebrew/opt/libomp/lib/libomp.dylib")
 endif()
 
-if(LINUX AND NOT BUILD_ON_HPC)
-  set(OMP_LIBRARY "/usr/lib/libgomp.so")
-  set(MKL_DIR "/opt/intel/mkl/lib/intel64/cmake/mkl")
-  set(MKL_THREADING "gnu_thread")
+if(NOT BUILD_ON_HPC)
+  FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG 3.4.0
+    GIT_SHALLOW TRUE)
+  FetchContent_MakeAvailable(Eigen)
+
+  if(LINUX)
+    set(OMP_LIBRARY "/usr/lib/libgomp.so")
+    set(MKL_DIR "/opt/intel/mkl/lib/intel64/cmake/mkl")
+    set(MKL_THREADING "gnu_thread")
+  endif()
 endif()
 
 find_package(OpenMP REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(MKL REQUIRED)
+
+# APPLE use Apple Accelerate
+if(NOT APPLE)
+  find_package(MKL REQUIRED)
+endif()
 
 FetchContent_Declare(args
   GIT_REPOSITORY https://github.com/Taywee/args.git
@@ -69,7 +70,8 @@ FetchContent_Declare(args
   FIND_PACKAGE_ARGS NAMES args
 )
 FetchContent_GetProperties(args)
-FetchContent_MakeAvailable(args)
+
+FetchContent_MakeAvailable(args spdlog)
 
 # Source
 file(GLOB_RECURSE SOURCES src/*.cpp src/*.cc)
